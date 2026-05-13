@@ -121,6 +121,7 @@ interface Profile {
   name: string;
   birthDatetime: string;
   birthPlace: string;
+  birthLocalDate?: string;
   chartData: ChartData | { chartData: ChartData };
 }
 
@@ -150,7 +151,7 @@ export default function ChartScreen() {
     );
   }
 
-  const { chartData, name, birthDatetime, birthPlace } = profile;
+  const { chartData, name, birthDatetime, birthPlace, birthLocalDate } = profile;
   const chart = normalizeChartData(chartData);
 
   if (!chart?.planets || !chart?.angles) {
@@ -169,9 +170,13 @@ export default function ChartScreen() {
     .map((p) => chart.planets.find((pp) => pp.name === p))
     .filter(Boolean) as PlanetPosition[];
 
-  const birthDate = new Date(birthDatetime).toLocaleDateString('en-US', {
-    month: 'long', day: 'numeric', year: 'numeric',
-  });
+  const birthDate = (() => {
+    const [datePart] = (birthLocalDate ?? birthDatetime).split('T');
+    const [year, month, day] = datePart.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+      month: 'long', day: 'numeric', year: 'numeric',
+    });
+  })();
 
   const significantAspects = (Array.isArray(chart.aspects) ? chart.aspects : [])
     .filter((a) => a.orb <= 3)

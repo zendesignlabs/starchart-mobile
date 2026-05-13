@@ -11,6 +11,8 @@ import {
   Platform,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { fromZonedTime } from 'date-fns-tz';
+import tzLookup from 'tz-lookup';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
@@ -43,6 +45,9 @@ interface StoredProfile {
   birthLat: number;
   birthLng: number;
   timeUnknown?: boolean;
+  birthTimezone?: string;
+  birthLocalDate?: string;
+  birthLocalTime?: string;
   createdAt?: string;
 }
 
@@ -139,17 +144,31 @@ function timePickerValue(value: string): Date {
   return d;
 }
 
-function buildISO(date: string, time: string, timeUnknown: boolean): string {
-  if (timeUnknown || !time) {
-    return `${date}T12:00:00.000Z`;
-  }
-  return `${date}T${time}:00.000Z`;
+function timezoneForLocation(lat: number, lng: number): string {
+  return tzLookup(lat, lng);
+}
+
+function buildBirthUTC(date: string, time: string, timeUnknown: boolean, lat: number, lng: number): {
+  isoDatetime: string;
+  timezone: string;
+  localTime: string;
+} {
+  const timezone = timezoneForLocation(lat, lng);
+  const localTime = timeUnknown || !time ? '12:00' : time;
+  const utcDate = fromZonedTime(`${date}T${localTime}:00`, timezone);
+
+  return {
+    isoDatetime: utcDate.toISOString(),
+    timezone,
+    localTime,
+  };
 }
 
 function profileToForm(profile: StoredProfile): FormState {
-  const [datePart, timePart = ''] = profile.birthDatetime.split('T');
-  const time = timePart.slice(0, 5);
+  const [utcDatePart, utcTimePart = ''] = profile.birthDatetime.split('T');
   const timeUnknown = profile.timeUnknown ?? false;
+  const datePart = profile.birthLocalDate ?? utcDatePart;
+  const time = profile.birthLocalTime ?? utcTimePart.slice(0, 5);
 
   return {
     name: profile.name,
@@ -387,7 +406,13 @@ export default function OnboardingScreen() {
     setSubmitting(true);
     setSubmitError('');
     try {
-      const isoDatetime = buildISO(form.birthDate, form.birthTime, form.timeUnknown);
+      const { isoDatetime, timezone, localTime } = buildBirthUTC(
+        form.birthDate,
+        form.birthTime,
+        form.timeUnknown,
+        form.lat!,
+        form.lng!
+      );
       const chartData = await ephemeris.calculateChart(isoDatetime, form.lat!, form.lng!);
       const existingRaw = await AsyncStorage.getItem(STORAGE_KEY);
       const existingProfile = existingRaw ? JSON.parse(existingRaw) : null;
@@ -399,6 +424,9 @@ export default function OnboardingScreen() {
         birthLat: form.lat!,
         birthLng: form.lng!,
         timeUnknown: form.timeUnknown,
+        birthTimezone: timezone,
+        birthLocalDate: form.birthDate,
+        birthLocalTime: localTime,
         chartData,
         createdAt: existingProfile?.createdAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),

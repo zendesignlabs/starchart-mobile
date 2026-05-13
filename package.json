@@ -15,6 +15,8 @@
     "@react-native-community/datetimepicker": "8.4.4",
     "@tanstack/react-query": "^5.100.10",
     "axios": "^1.16.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "expo": "~54.0.33",
     "expo-apple-authentication": "~8.0.8",
     "expo-constants": "~18.0.13",
@@ -28,6 +30,7 @@
     "react-native-maps": "^1.20.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
+    "tz-lookup": "^6.1.25",
     "zustand": "^5.0.13"
   },
   "devDependencies": {

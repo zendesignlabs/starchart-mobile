@@ -23,6 +23,9 @@ interface Profile {
   birthDatetime: string;
   birthPlace: string;
   timeUnknown?: boolean;
+  birthLocalDate?: string;
+  birthLocalTime?: string;
+  birthTimezone?: string;
 }
 
 function formatTrialEnd(trialEnd: number | null | undefined): string {
@@ -31,8 +34,8 @@ function formatTrialEnd(trialEnd: number | null | undefined): string {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 }
 
-function formatBirthDate(datetime: string): string {
-  const [datePart] = datetime.split('T');
+function formatBirthDate(datetime: string, localDate?: string): string {
+  const [datePart] = (localDate ?? datetime).split('T');
   const [year, month, day] = datePart.split('-').map(Number);
   if (!year || !month || !day) return '—';
   return new Date(year, month - 1, day).toLocaleDateString('en-US', {
@@ -42,9 +45,9 @@ function formatBirthDate(datetime: string): string {
   });
 }
 
-function formatBirthTime(datetime: string, timeUnknown?: boolean): string {
+function formatBirthTime(datetime: string, timeUnknown?: boolean, localTime?: string): string {
   if (timeUnknown) return 'Unknown';
-  const timePart = datetime.split('T')[1];
+  const timePart = localTime ?? datetime.split('T')[1];
   if (!timePart) return '—';
   const [hourRaw, minuteRaw] = timePart.split(':');
   const hour = Number(hourRaw);
@@ -182,8 +185,8 @@ export default function SettingsScreen() {
     ]);
   }
 
-  const birthDate = profile ? formatBirthDate(profile.birthDatetime) : '';
-  const birthTime = profile ? formatBirthTime(profile.birthDatetime, profile.timeUnknown) : '';
+  const birthDate = profile ? formatBirthDate(profile.birthDatetime, profile.birthLocalDate) : '';
+  const birthTime = profile ? formatBirthTime(profile.birthDatetime, profile.timeUnknown, profile.birthLocalTime) : '';
 
   function subStatusLabel(): string {
     if (subLoading) return 'Checking…';
@@ -227,6 +230,7 @@ export default function SettingsScreen() {
           <SettingsRow label="Name" value={profile.name} />
           <SettingsRow label="Date" value={birthDate} />
           <SettingsRow label="Time" value={birthTime} />
+          <SettingsRow label="Timezone" value={profile.birthTimezone ?? '—'} />
           <SettingsRow label="Place" value={profile.birthPlace} />
         </>
       )}
