@@ -81,10 +81,12 @@ export async function getTransitsToNatal(
   momentUTC?: string
 ): Promise<TransitAspect[]> {
   const { chartData } = await calculateChartBundle(natalDatetime, natalLat, natalLng);
-  const natalPositions = chartData.planets.map((p) => ({
+  const natalPositions = (Array.isArray(chartData.planets) ? chartData.planets : []).map((p) => ({
     name: servicePlanetName(p.name),
     longitude: p.longitude,
   }));
+
+  if (natalPositions.length === 0) return [];
 
   const response = await client.post<{ aspects?: TransitAspect[] }>('/transits-to-natal', {
     natalPositions,

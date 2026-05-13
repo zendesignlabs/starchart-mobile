@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 import MapView, { Polyline } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
@@ -55,6 +56,7 @@ function capitalize(s: string) {
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function MapScreen() {
+  const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [lines, setLines] = useState<AstrocartographyLine[]>([]);
   const [transits, setTransits] = useState<TransitAspect[]>([]);
@@ -69,6 +71,11 @@ export default function MapScreen() {
       if (!raw) return;
       const p: Profile = JSON.parse(raw);
       setProfile(p);
+
+      if (!p.birthDatetime || typeof p.birthLat !== 'number' || typeof p.birthLng !== 'number') {
+        setError('Your saved birth data is incomplete. Please rerun onboarding.');
+        return;
+      }
 
       const [acgLines, aspects] = await Promise.all([
         ephemeris.calculateACGLines(p.birthDatetime, p.birthLat, p.birthLng),
@@ -122,6 +129,11 @@ export default function MapScreen() {
 
   const activatedList = Array.from(activatedPlanets).slice(0, 3);
 
+  async function restartOnboarding() {
+    await AsyncStorage.removeItem(STORAGE_KEY);
+    router.replace('/(auth)/onboarding');
+  }
+
   // ── Loading / error states ──────────────────────────────────────────────────
 
   if (loading) {
@@ -137,6 +149,9 @@ export default function MapScreen() {
     return (
       <View style={styles.centered}>
         <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.recoveryButton} onPress={restartOnboarding} activeOpacity={0.85}>
+          <Text style={styles.recoveryButtonText}>Restart onboarding</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -163,14 +178,16 @@ export default function MapScreen() {
         mapType="standard"
       >
         {sortedLines
-          .filter((l) => l.visible !== false)
+          .filter((l) => l.visible !== false && Array.isArray(l.coordinates) && l.coordinates.length > 0)
           .map((line, i) => {
             const { color, width, opacity } = lineStroke(line);
             // coordinates come as [lng, lat]; MapView expects { latitude, longitude }
-            const coords = line.coordinates.map(([lng, lat]) => ({
-              latitude: lat,
-              longitude: lng,
-            }));
+            const coords = line.coordinates
+              .filter((pair) => Array.isArray(pair) && pair.length === 2)
+              .map(([lng, lat]) => ({
+                latitude: lat,
+                longitude: lng,
+              }));
             return (
               <Polyline
                 key={`${line.planet}-${line.lineType}-${i}`}
@@ -245,6 +262,19 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.base,
     color: colors.textSecondary,
     textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  recoveryButton: {
+    backgroundColor: colors.accentYellow,
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  recoveryButtonText: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.base,
+    color: colors.textPrimary,
   },
   header: {
     paddingTop: 56,

@@ -173,7 +173,7 @@ export default function ChartScreen() {
     month: 'long', day: 'numeric', year: 'numeric',
   });
 
-  const significantAspects = chart.aspects
+  const significantAspects = (Array.isArray(chart.aspects) ? chart.aspects : [])
     .filter((a) => a.orb <= 3)
     .sort((a, b) => a.orb - b.orb)
     .slice(0, 12);

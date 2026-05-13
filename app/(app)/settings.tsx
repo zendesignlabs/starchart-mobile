@@ -47,21 +47,28 @@ function SettingsRow({
 }) {
   return (
     <TouchableOpacity
-      style={sStyles.row}
+      style={[
+        sStyles.row,
+        onPress && sStyles.actionRow,
+        accent && sStyles.primaryActionRow,
+      ]}
       onPress={onPress}
       disabled={!onPress}
       activeOpacity={onPress ? 0.6 : 1}
     >
       <Text style={[
         sStyles.rowLabel,
+        onPress && sStyles.actionLabel,
         destructive && { color: '#CC2200' },
         accent && { color: colors.textPrimary, fontFamily: fontFamilies.bodyMedium },
       ]}>
         {label}
       </Text>
-      {value !== undefined && (
+      {value !== undefined ? (
         <Text style={sStyles.rowValue}>{value}</Text>
-      )}
+      ) : onPress ? (
+        <Text style={[sStyles.actionArrow, destructive && { color: '#CC2200' }]}>↗</Text>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -182,7 +189,7 @@ export default function SettingsScreen() {
       <SectionHeader label="Subscription" />
       <SettingsRow label="Status" value={subStatusLabel()} />
       <SettingsRow
-        label={subStatus?.active ? 'Manage subscription' : 'Subscribe'}
+        label={subStatus?.active ? 'Manage subscription' : 'Subscribe — start 7-day trial'}
         onPress={handleManageSub}
         accent={!subStatus?.active}
       />
@@ -196,7 +203,7 @@ export default function SettingsScreen() {
           <SettingsRow label="Place" value={profile.birthPlace} />
         </>
       )}
-      <SettingsRow label="Edit birth data" onPress={handleEditBirthData} />
+      <SettingsRow label="Edit birth data" onPress={handleEditBirthData} accent />
 
       {/* Account actions */}
       <SectionHeader label="" />
@@ -248,11 +255,23 @@ const sStyles = StyleSheet.create({
     borderBottomColor: colors.backgroundSecondary,
     minHeight: 52,
   },
+  actionRow: {
+    borderBottomColor: colors.borderBlack,
+  },
+  primaryActionRow: {
+    backgroundColor: colors.accentYellow,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.borderBlack,
+  },
   rowLabel: {
     fontFamily: fontFamilies.body,
     fontSize: fontSizes.base,
     color: colors.textPrimary,
     flex: 1,
+  },
+  actionLabel: {
+    fontFamily: fontFamilies.bodyMedium,
+    textDecorationLine: 'underline',
   },
   rowValue: {
     fontFamily: fontFamilies.body,
@@ -260,5 +279,11 @@ const sStyles = StyleSheet.create({
     color: colors.textSecondary,
     maxWidth: '55%',
     textAlign: 'right',
+  },
+  actionArrow: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.lg,
+    color: colors.textPrimary,
+    marginLeft: spacing.md,
   },
 });
