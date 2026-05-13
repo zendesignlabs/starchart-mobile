@@ -64,6 +64,11 @@ export default function WelcomeScreen() {
     }
   }
 
+  async function handleReviewMode() {
+    await setAuth('review-mode-token', 'review@starchart.local');
+    router.replace('/(auth)/onboarding');
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -73,7 +78,7 @@ export default function WelcomeScreen() {
         <Text style={styles.wordmark}>Starchart</Text>
         <Text style={styles.tagline}>Your map, right now.</Text>
 
-        {Platform.OS === 'ios' ? (
+        {Platform.OS === 'ios' && (
           <AppleAuthentication.AppleAuthenticationButton
             buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
             buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
@@ -81,7 +86,19 @@ export default function WelcomeScreen() {
             style={styles.appleButton}
             onPress={handleAppleSignIn}
           />
-        ) : (
+        )}
+
+        {__DEV__ && (
+          <TouchableOpacity
+            style={styles.reviewButton}
+            onPress={handleReviewMode}
+            disabled={loading}
+          >
+            <Text style={styles.reviewButtonText}>Continue in review mode</Text>
+          </TouchableOpacity>
+        )}
+
+        {Platform.OS !== 'ios' && (
           <View style={styles.emailBlock}>
             <Text style={styles.label}>Email</Text>
             <TextInput
@@ -145,6 +162,20 @@ const styles = StyleSheet.create({
   appleButton: {
     width: '100%',
     height: 52,
+  },
+  reviewButton: {
+    marginTop: spacing.md,
+    backgroundColor: colors.accentYellow,
+    height: 52,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+  },
+  reviewButtonText: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.md,
+    color: colors.textPrimary,
   },
   emailBlock: {
     gap: spacing.sm,
