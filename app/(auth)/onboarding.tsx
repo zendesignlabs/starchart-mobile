@@ -44,9 +44,38 @@ function isStep1Complete(form: FormState) {
   return form.name.trim().length > 0;
 }
 
+function formatDateInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+}
+
+function formatTimeInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+function isValidBirthDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  if (year < 1900 || year > new Date().getFullYear()) return false;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCFullYear() === year
+    && d.getUTCMonth() === month - 1
+    && d.getUTCDate() === day;
+}
+
+function isValidBirthTime(value: string) {
+  if (!/^\d{2}:\d{2}$/.test(value)) return false;
+  const [hour, minute] = value.split(':').map(Number);
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+}
+
 function isStep2Complete(form: FormState) {
-  if (!form.birthDate) return false;
-  if (!form.timeUnknown && !form.birthTime) return false;
+  if (!isValidBirthDate(form.birthDate)) return false;
+  if (!form.timeUnknown && !isValidBirthTime(form.birthTime)) return false;
   return true;
 }
 
@@ -93,25 +122,26 @@ function StepDateTime({ form, setForm }: { form: FormState; setForm: (f: FormSta
   const [timeError, setTimeError] = useState('');
 
   function handleDateChange(v: string) {
+    const formatted = formatDateInput(v);
     setDateError('');
-    // Allow partial input while typing; validate on blur
-    setForm({ ...form, birthDate: v });
+    setForm({ ...form, birthDate: formatted });
   }
 
   function handleDateBlur() {
-    if (form.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate)) {
-      setDateError('Use format YYYY-MM-DD');
+    if (form.birthDate && !isValidBirthDate(form.birthDate)) {
+      setDateError('Enter a real date as YYYY-MM-DD');
     }
   }
 
   function handleTimeChange(v: string) {
+    const formatted = formatTimeInput(v);
     setTimeError('');
-    setForm({ ...form, birthTime: v });
+    setForm({ ...form, birthTime: formatted });
   }
 
   function handleTimeBlur() {
-    if (form.birthTime && !/^\d{2}:\d{2}$/.test(form.birthTime)) {
-      setTimeError('Use format HH:MM (24h)');
+    if (form.birthTime && !isValidBirthTime(form.birthTime)) {
+      setTimeError('Enter a real time as HH:MM, 24-hour time');
     }
   }
 
@@ -127,7 +157,8 @@ function StepDateTime({ form, setForm }: { form: FormState; setForm: (f: FormSta
         onBlur={handleDateBlur}
         placeholder="YYYY-MM-DD"
         placeholderTextColor={colors.textSecondary}
-        keyboardType="numeric"
+        keyboardType="number-pad"
+        textContentType="birthdate"
         maxLength={10}
       />
       {dateError ? <Text style={stepStyles.errorText}>{dateError}</Text> : null}
@@ -142,7 +173,7 @@ function StepDateTime({ form, setForm }: { form: FormState; setForm: (f: FormSta
             onBlur={handleTimeBlur}
             placeholder="HH:MM (24h)"
             placeholderTextColor={colors.textSecondary}
-            keyboardType="numeric"
+            keyboardType="number-pad"
             maxLength={5}
           />
           {timeError ? <Text style={stepStyles.errorText}>{timeError}</Text> : null}
