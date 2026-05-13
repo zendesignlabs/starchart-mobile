@@ -5,34 +5,49 @@ import { colors, fontFamilies, fontSizes } from '../../src/theme';
 import { useAuthStore } from '../../src/store/auth';
 import { getSubscriptionStatus } from '../../src/lib/api';
 
-const TAB_ICONS: Record<string, string> = {
-  index: '◎',
-  chart: '☉',
-  lines: '☷',
-  settings: '⚙︎',
+const TAB_ITEMS: Record<string, { icon: string; label: string }> = {
+  index: { icon: '◎', label: 'Map' },
+  chart: { icon: '☉', label: 'Chart' },
+  lines: { icon: '☷', label: 'Lines' },
+  settings: { icon: '⚙︎', label: 'Settings' },
 };
 
-function TabIcon({ name, focused }: { name: string; focused: boolean }) {
+function TabItem({ name, focused }: { name: string; focused: boolean }) {
+  const item = TAB_ITEMS[name] ?? { icon: '·', label: name };
+
   return (
     <View
       style={{
-        width: 28,
-        height: 24,
+        width: 78,
+        height: 52,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: focused ? colors.accentYellow : 'transparent',
-        borderWidth: focused ? 1 : 0,
+        borderWidth: focused ? 2 : 0,
         borderColor: colors.borderBlack,
+        paddingTop: 3,
       }}
     >
       <Text
         style={{
           fontFamily: fontFamilies.heading,
-          fontSize: 16,
+          fontSize: 20,
+          lineHeight: 22,
           color: focused ? colors.textPrimary : colors.textSecondary,
         }}
       >
-        {TAB_ICONS[name] ?? '·'}
+        {item.icon}
+      </Text>
+      <Text
+        style={{
+          fontFamily: fontFamilies.bodyMedium,
+          fontSize: fontSizes.xs,
+          lineHeight: 14,
+          color: focused ? colors.textPrimary : colors.textSecondary,
+          marginTop: 2,
+        }}
+      >
+        {item.label}
       </Text>
     </View>
   );
@@ -78,23 +93,25 @@ export default function AppLayout() {
     <Tabs
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,
+        tabBarIcon: ({ focused }) => <TabItem name={route.name} focused={focused} />,
+        tabBarShowLabel: false,
         tabBarActiveTintColor: colors.textPrimary,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
+          height: 78,
           backgroundColor: colors.backgroundPrimary,
           borderTopWidth: 2,
           borderTopColor: colors.borderBlack,
           elevation: 0,
           shadowOpacity: 0,
+          paddingTop: 6,
+          paddingBottom: 8,
         },
         tabBarItemStyle: {
-          paddingTop: 6,
-          paddingBottom: 4,
-        },
-        tabBarLabelStyle: {
-          fontFamily: fontFamilies.bodyMedium,
-          fontSize: fontSizes.xs,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingTop: 0,
+          paddingBottom: 0,
         },
       })}
     >
