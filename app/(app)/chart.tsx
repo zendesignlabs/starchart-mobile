@@ -121,7 +121,13 @@ interface Profile {
   name: string;
   birthDatetime: string;
   birthPlace: string;
-  chartData: ChartData;
+  chartData: ChartData | { chartData: ChartData };
+}
+
+function normalizeChartData(chartData: Profile['chartData']): ChartData | null {
+  if (!chartData) return null;
+  if ('chartData' in chartData) return chartData.chartData;
+  return chartData;
 }
 
 export default function ChartScreen() {
@@ -144,7 +150,21 @@ export default function ChartScreen() {
     );
   }
 
-  const { chartData: chart, name, birthDatetime, birthPlace } = profile;
+  const { chartData, name, birthDatetime, birthPlace } = profile;
+  const chart = normalizeChartData(chartData);
+
+  if (!chart?.planets || !chart?.angles) {
+    return (
+      <View style={[sStyles.container, { paddingTop: insets.top }]}> 
+        <View style={sStyles.header}>
+          <Text style={sStyles.heading}>Natal Chart</Text>
+          <Text style={sStyles.subheading}>Chart data could not be loaded.</Text>
+          <Text style={sStyles.place}>Go to Settings → Edit birth data to recalculate.</Text>
+        </View>
+      </View>
+    );
+  }
+
   const orderedPlanets = PLANET_ORDER
     .map((p) => chart.planets.find((pp) => pp.name === p))
     .filter(Boolean) as PlanetPosition[];
