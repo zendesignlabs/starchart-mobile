@@ -159,6 +159,8 @@ interface Profile {
   birthLat: number;
   birthLng: number;
   birthLocalDate?: string;
+  birthLocalTime?: string;
+  timeUnknown?: boolean;
   chartData: ChartData | { chartData: ChartData };
   chartCalculatedFor?: string;
   updatedAt?: string;
@@ -168,6 +170,19 @@ function normalizeChartData(chartData: Profile['chartData']): ChartData | null {
   if (!chartData) return null;
   if ('chartData' in chartData) return chartData.chartData;
   return chartData;
+}
+
+function formatBirthTime(datetime: string, localTime?: string, timeUnknown?: boolean): string {
+  if (timeUnknown) return 'time unknown';
+  const timePart = localTime ?? datetime.split('T')[1]?.slice(0, 5);
+  if (!timePart) return '';
+  const [hourStr, minuteStr] = timePart.split(':');
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return '';
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${String(minute).padStart(2, '0')} ${period}`;
 }
 
 export default function ChartScreen() {
@@ -230,7 +245,7 @@ export default function ChartScreen() {
     );
   }
 
-  const { chartData, name, birthDatetime, birthPlace, birthLocalDate } = profile;
+  const { chartData, name, birthDatetime, birthPlace, birthLocalDate, birthLocalTime, timeUnknown } = profile;
   const chart = normalizeChartData(chartData);
 
   if (!chart?.planets || !chart?.angles) {
@@ -257,6 +272,8 @@ export default function ChartScreen() {
     });
   })();
 
+  const birthTime = formatBirthTime(birthDatetime, birthLocalTime, timeUnknown);
+
   const significantAspects = (Array.isArray(chart.aspects) ? chart.aspects : [])
     .filter((a) => a.orb <= 3)
     .sort((a, b) => a.orb - b.orb)
@@ -271,7 +288,9 @@ export default function ChartScreen() {
       {/* Header */}
       <View style={[sStyles.header, { paddingTop: insets.top + spacing.lg }]}>
         <Text style={sStyles.heading}>Natal Chart</Text>
-        <Text style={sStyles.subheading}>{name} · {birthDate}</Text>
+        <Text style={sStyles.subheading}>
+          {name} · {birthDate}{birthTime ? ` · ${birthTime}` : ''}
+        </Text>
         <Text style={sStyles.place}>{birthPlace}</Text>
       </View>
 
