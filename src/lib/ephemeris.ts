@@ -1,67 +1,107 @@
 import axios from 'axios';
-import type { ChartData, AstrocartographyLine, TransitAspect } from '../types/chart';
+import type { ChartData, AstrocartographyLine, TransitAspect, Planet } from '../types/chart';
+import { transformRawChart } from './transform';
 
-const BASE_URL = process.env.EXPO_PUBLIC_EPHEMERIS_URL ?? '';
-const API_KEY = process.env.EXPO_PUBLIC_EPHEMERIS_KEY ?? '';
+const BASE_URL = `${process.env.EXPO_PUBLIC_API_URL ?? 'https://mobile.starchart.now'}/api/ephemeris`;
 
 const client = axios.create({
   baseURL: BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Api-Key': API_KEY,
-  },
+  headers: { 'Content-Type': 'application/json' },
   timeout: 15000,
 });
 
-/**
- * Calculate a natal chart for a given birth datetime and location.
- * Matches the ephemeris service POST /chart endpoint.
- */
+type ChartResponse = ChartData | {
+  chartData: ChartData;
+  acgLines?: AstrocartographyLine[];
+} | {
+  positions?: unknown[];
+  houses?: unknown;
+  aspects?: unknown[];
+  acgLines?: Record<string, Array<[number, number]>>;
+  calculatedAt?: string;
+};
+
+function unwrapChartResponse(data: ChartResponse): { chartData: ChartData; acgLines: AstrocartographyLine[] } {
+  if ('chartData' in data) {
+    return {
+      chartData: data.chartData,
+      acgLines: Array.isArray(data.acgLines) ? data.acgLines : [],
+    };
+  }
+  if ('positions' in data || 'houses' in data) {
+    return transformRawChart(data as Parameters<typeof transformRawChart>[0]);
+  }
+  return { chartData: data as ChartData, acgLines: [] };
+}
+
+function servicePlanetName(planet: Planet): string {
+  const map: Record<Planet, string> = {
+    sun: 'Sun',
+    moon: 'Moon',
+    mercury: 'Mercury',
+    venus: 'Venus',
+    mars: 'Mars',
+    jupiter: 'Jupiter',
+    saturn: 'Saturn',
+    uranus: 'Uranus',
+    neptune: 'Neptune',
+    pluto: 'Pluto',
+    north_node: 'NNode',
+    chiron: 'Chiron',
+  };
+  return map[planet];
+}
+
+async function calculateChartBundle(
+  datetime: string,
+  lat: number,
+  lng: number
+): Promise<{ chartData: ChartData; acgLines: AstrocartographyLine[] }> {
+  const response = await client.post<ChartResponse>('/chart', {
+    datetime,
+    birthUTC: datetime,
+    lat,
+    lng,
+    houseSystem: 'P',
+  });
+  return unwrapChartResponse(response.data);
+}
+
 export async function calculateChart(
   datetime: string,
   lat: number,
   lng: number
 ): Promise<ChartData> {
-  const response = await client.post<ChartData>('/chart', {
-    datetime,
-    lat,
-    lng,
-    houseSystem: 'P', // Placidus
-  });
-  return response.data;
+  const { chartData } = await calculateChartBundle(datetime, lat, lng);
+  return chartData;
 }
 
-/**
- * Calculate astrocartography lines for a natal chart.
- * Matches the ephemeris service POST /astrocartography endpoint.
- */
 export async function calculateACGLines(
   datetime: string,
   lat: number,
   lng: number
 ): Promise<AstrocartographyLine[]> {
-  const response = await client.post<{ lines: AstrocartographyLine[] }>(
-    '/astrocartography',
-    { datetime, lat, lng }
-  );
-  return response.data.lines;
+  const { acgLines } = await calculateChartBundle(datetime, lat, lng);
+  return acgLines;
 }
 
-/**
- * Get transits to a natal chart for a given moment.
- * If momentUTC is omitted, the current time is used.
- */
 export async function getTransitsToNatal(
   natalDatetime: string,
   natalLat: number,
   natalLng: number,
   momentUTC?: string
 ): Promise<TransitAspect[]> {
-  const response = await client.post<{ aspects: TransitAspect[] }>('/transits', {
-    natalDatetime,
-    natalLat,
-    natalLng,
+  const { chartData } = await calculateChartBundle(natalDatetime, natalLat, natalLng);
+  const natalPositions = (Array.isArray(chartData.planets) ? chartData.planets : []).map((p) => ({
+    name: servicePlanetName(p.name),
+    longitude: p.longitude,
+  }));
+
+  if (natalPositions.length === 0) return [];
+
+  const response = await client.post<{ aspects?: TransitAspect[] }>('/transits-to-natal', {
+    natalPositions,
     momentUTC: momentUTC ?? new Date().toISOString(),
   });
-  return response.data.aspects;
+  return Array.isArray(response.data.aspects) ? response.data.aspects : [];
 }

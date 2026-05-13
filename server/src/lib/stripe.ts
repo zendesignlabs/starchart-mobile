@@ -7,4 +7,4 @@ export const stripe = new Stripe(process.env.STRIPE_RESTRICTED_KEY, {
 })
 
 export const TRIAL_DAYS = 7
-export const PRICE_ID_MONTHLY = process.env.STRIPE_PRICE_ID_MONTHLY ?? '' // set after creating price in Stripe
+export const PRICE_ID = process.env.STRIPE_PRICE_ID_MONTHLY ?? 'price_1TWOlAHNmXIZFDIzXGdnSihm'

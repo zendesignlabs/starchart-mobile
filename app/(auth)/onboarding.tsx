@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,10 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { fromZonedTime } from 'date-fns-tz';
+import tzLookup from 'tz-lookup';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
 import * as ephemeris from '../../src/lib/ephemeris';
@@ -35,6 +38,19 @@ interface FormState {
   lng: number | null;
 }
 
+interface StoredProfile {
+  name: string;
+  birthDatetime: string;
+  birthPlace: string;
+  birthLat: number;
+  birthLng: number;
+  timeUnknown?: boolean;
+  birthTimezone?: string;
+  birthLocalDate?: string;
+  birthLocalTime?: string;
+  createdAt?: string;
+}
+
 const TOTAL_STEPS = 3;
 const STORAGE_KEY = '@starchart/profile';
 
@@ -44,9 +60,25 @@ function isStep1Complete(form: FormState) {
   return form.name.trim().length > 0;
 }
 
+function isValidBirthDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  if (year < 1900 || year > new Date().getFullYear()) return false;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCFullYear() === year
+    && d.getUTCMonth() === month - 1
+    && d.getUTCDate() === day;
+}
+
+function isValidBirthTime(value: string) {
+  if (!/^\d{2}:\d{2}$/.test(value)) return false;
+  const [hour, minute] = value.split(':').map(Number);
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+}
+
 function isStep2Complete(form: FormState) {
-  if (!form.birthDate) return false;
-  if (!form.timeUnknown && !form.birthTime) return false;
+  if (!isValidBirthDate(form.birthDate)) return false;
+  if (!form.timeUnknown && !isValidBirthTime(form.birthTime)) return false;
   return true;
 }
 
@@ -61,11 +93,92 @@ function isStepComplete(step: number, form: FormState) {
   return false;
 }
 
-function buildISO(date: string, time: string, timeUnknown: boolean): string {
-  if (timeUnknown || !time) {
-    return `${date}T12:00:00.000Z`;
+function formatDateForStorage(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatTimeForStorage(date: Date): string {
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${hour}:${minute}`;
+}
+
+function formatDateForDisplay(value: string): string {
+  if (!isValidBirthDate(value)) return 'Choose date';
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatTimeForDisplay(value: string): string {
+  if (!isValidBirthTime(value)) return 'Choose time';
+  const [hour, minute] = value.split(':').map(Number);
+  const d = new Date();
+  d.setHours(hour, minute, 0, 0);
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function datePickerValue(value: string): Date {
+  if (!isValidBirthDate(value)) return new Date(1990, 0, 1);
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function timePickerValue(value: string): Date {
+  const d = new Date();
+  if (isValidBirthTime(value)) {
+    const [hour, minute] = value.split(':').map(Number);
+    d.setHours(hour, minute, 0, 0);
+  } else {
+    d.setHours(12, 0, 0, 0);
   }
-  return `${date}T${time}:00.000Z`;
+  return d;
+}
+
+function timezoneForLocation(lat: number, lng: number): string {
+  return tzLookup(lat, lng);
+}
+
+function buildBirthUTC(date: string, time: string, timeUnknown: boolean, lat: number, lng: number): {
+  isoDatetime: string;
+  timezone: string;
+  localTime: string;
+} {
+  const timezone = timezoneForLocation(lat, lng);
+  const localTime = timeUnknown || !time ? '12:00' : time;
+  const utcDate = fromZonedTime(`${date}T${localTime}:00`, timezone);
+
+  return {
+    isoDatetime: utcDate.toISOString(),
+    timezone,
+    localTime,
+  };
+}
+
+function profileToForm(profile: StoredProfile): FormState {
+  const [utcDatePart, utcTimePart = ''] = profile.birthDatetime.split('T');
+  const timeUnknown = profile.timeUnknown ?? false;
+  const datePart = profile.birthLocalDate ?? utcDatePart;
+  const time = profile.birthLocalTime ?? utcTimePart.slice(0, 5);
+
+  return {
+    name: profile.name,
+    birthDate: datePart,
+    birthTime: timeUnknown ? '' : time,
+    timeUnknown,
+    placeName: profile.birthPlace,
+    lat: profile.birthLat,
+    lng: profile.birthLng,
+  };
 }
 
 // ─── Step components ──────────────────────────────────────────────────────────
@@ -89,30 +202,19 @@ function StepName({ form, setForm }: { form: FormState; setForm: (f: FormState) 
 }
 
 function StepDateTime({ form, setForm }: { form: FormState; setForm: (f: FormState) => void }) {
-  const [dateError, setDateError] = useState('');
-  const [timeError, setTimeError] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
-  function handleDateChange(v: string) {
-    setDateError('');
-    // Allow partial input while typing; validate on blur
-    setForm({ ...form, birthDate: v });
+  function handleDatePicked(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS !== 'ios') setShowDatePicker(false);
+    if (event.type === 'dismissed' || !selected) return;
+    setForm({ ...form, birthDate: formatDateForStorage(selected) });
   }
 
-  function handleDateBlur() {
-    if (form.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate)) {
-      setDateError('Use format YYYY-MM-DD');
-    }
-  }
-
-  function handleTimeChange(v: string) {
-    setTimeError('');
-    setForm({ ...form, birthTime: v });
-  }
-
-  function handleTimeBlur() {
-    if (form.birthTime && !/^\d{2}:\d{2}$/.test(form.birthTime)) {
-      setTimeError('Use format HH:MM (24h)');
-    }
+  function handleTimePicked(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS !== 'ios') setShowTimePicker(false);
+    if (event.type === 'dismissed' || !selected) return;
+    setForm({ ...form, birthTime: formatTimeForStorage(selected), timeUnknown: false });
   }
 
   return (
@@ -120,32 +222,44 @@ function StepDateTime({ form, setForm }: { form: FormState; setForm: (f: FormSta
       <Text style={stepStyles.label}>When were you born?</Text>
 
       <Text style={stepStyles.sublabel}>Birth date</Text>
-      <TextInput
-        style={[stepStyles.input, dateError ? stepStyles.inputError : null]}
-        value={form.birthDate}
-        onChangeText={handleDateChange}
-        onBlur={handleDateBlur}
-        placeholder="YYYY-MM-DD"
-        placeholderTextColor={colors.textSecondary}
-        keyboardType="numeric"
-        maxLength={10}
-      />
-      {dateError ? <Text style={stepStyles.errorText}>{dateError}</Text> : null}
+      <TouchableOpacity
+        style={stepStyles.pickerButton}
+        onPress={() => setShowDatePicker(true)}
+        activeOpacity={0.85}
+      >
+        <Text style={stepStyles.pickerButtonText}>{formatDateForDisplay(form.birthDate)}</Text>
+        <Text style={stepStyles.pickerButtonIcon}>▾</Text>
+      </TouchableOpacity>
+      {showDatePicker && (
+        <DateTimePicker
+          value={datePickerValue(form.birthDate)}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          maximumDate={new Date()}
+          onChange={handleDatePicked}
+        />
+      )}
 
       {!form.timeUnknown && (
         <>
           <Text style={[stepStyles.sublabel, { marginTop: spacing.base }]}>Birth time</Text>
-          <TextInput
-            style={[stepStyles.input, timeError ? stepStyles.inputError : null]}
-            value={form.birthTime}
-            onChangeText={handleTimeChange}
-            onBlur={handleTimeBlur}
-            placeholder="HH:MM (24h)"
-            placeholderTextColor={colors.textSecondary}
-            keyboardType="numeric"
-            maxLength={5}
-          />
-          {timeError ? <Text style={stepStyles.errorText}>{timeError}</Text> : null}
+          <TouchableOpacity
+            style={stepStyles.pickerButton}
+            onPress={() => setShowTimePicker(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={stepStyles.pickerButtonText}>{formatTimeForDisplay(form.birthTime)}</Text>
+            <Text style={stepStyles.pickerButtonIcon}>▾</Text>
+          </TouchableOpacity>
+          {showTimePicker && (
+            <DateTimePicker
+              value={timePickerValue(form.birthTime)}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              is24Hour={false}
+              onChange={handleTimePicked}
+            />
+          )}
         </>
       )}
 
@@ -259,7 +373,9 @@ function StepPlace({ form, setForm }: { form: FormState; setForm: (f: FormState)
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const isEditingBirthData = params.mode === 'editBirthData';
+  const [step, setStep] = useState(isEditingBirthData ? 2 : 1);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [form, setForm] = useState<FormState>({
@@ -274,21 +390,48 @@ export default function OnboardingScreen() {
 
   const canAdvance = isStepComplete(step, form);
 
+  useEffect(() => {
+    if (!isEditingBirthData) return;
+
+    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
+      if (!raw) return;
+      const profile: StoredProfile = JSON.parse(raw);
+      setForm(profileToForm(profile));
+      setStep(2);
+    });
+  }, [isEditingBirthData]);
+
   async function handleFinish() {
     if (!canAdvance) return;
     setSubmitting(true);
     setSubmitError('');
     try {
-      const isoDatetime = buildISO(form.birthDate, form.birthTime, form.timeUnknown);
+      const { isoDatetime, timezone, localTime } = buildBirthUTC(
+        form.birthDate,
+        form.birthTime,
+        form.timeUnknown,
+        form.lat!,
+        form.lng!
+      );
       const chartData = await ephemeris.calculateChart(isoDatetime, form.lat!, form.lng!);
+      const existingRaw = await AsyncStorage.getItem(STORAGE_KEY);
+      const existingProfile = existingRaw ? JSON.parse(existingRaw) : null;
       const profile = {
+        ...existingProfile,
         name: form.name.trim(),
         birthDatetime: isoDatetime,
         birthPlace: form.placeName,
         birthLat: form.lat!,
         birthLng: form.lng!,
+        timeUnknown: form.timeUnknown,
+        birthTimezone: timezone,
+        birthLocalDate: form.birthDate,
+        birthLocalTime: localTime,
         chartData,
-        createdAt: new Date().toISOString(),
+        chartCalculatedFor: isoDatetime,
+        createdAt: existingProfile?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        revision: Date.now(),
       };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
       router.replace('/(app)/');
@@ -305,10 +448,16 @@ export default function OnboardingScreen() {
   }
 
   function handleBack() {
+    if (isEditingBirthData && step === 2) {
+      router.replace('/(app)/settings');
+      return;
+    }
     if (step > 1) setStep(step - 1);
   }
 
-  const stepLabel = `Step ${step} of ${TOTAL_STEPS}`;
+  const stepLabel = isEditingBirthData
+    ? `Birth data · ${step === 2 ? 'Date & time' : 'Place'}`
+    : `Step ${step} of ${TOTAL_STEPS}`;
 
   return (
     <KeyboardAvoidingView
@@ -332,7 +481,7 @@ export default function OnboardingScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {step === 1 && <StepName form={form} setForm={setForm} />}
+        {!isEditingBirthData && step === 1 && <StepName form={form} setForm={setForm} />}
         {step === 2 && <StepDateTime form={form} setForm={setForm} />}
         {step === 3 && <StepPlace form={form} setForm={setForm} />}
 
@@ -363,7 +512,7 @@ export default function OnboardingScreen() {
             <ActivityIndicator color={colors.textPrimary} />
           ) : (
             <Text style={styles.nextBtnText}>
-              {step === TOTAL_STEPS ? 'Begin' : 'Next'}
+              {step === TOTAL_STEPS ? (isEditingBirthData ? 'Save' : 'Begin') : 'Next'}
             </Text>
           )}
         </TouchableOpacity>
@@ -493,8 +642,26 @@ const stepStyles = StyleSheet.create({
     padding: spacing.md,
     backgroundColor: colors.backgroundPrimary,
   },
-  inputError: {
-    borderColor: colors.accentPink,
+  pickerButton: {
+    minHeight: 56,
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.backgroundPrimary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pickerButtonText: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.md,
+    color: colors.textPrimary,
+  },
+  pickerButtonIcon: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.md,
+    color: colors.textSecondary,
   },
   largeInput: {
     fontFamily: fontFamilies.heading,

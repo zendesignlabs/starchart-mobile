@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
 import {
@@ -27,6 +28,14 @@ function parseTitle(interp: Interpretation): { planet: string; angle: string } {
     return { planet: capitalize(parts[0]), angle: parts[1].toUpperCase() };
   }
   return { planet: interp.title, angle: '' };
+}
+
+function mapParamsForInterpretation(interp: Interpretation): { planet: string; lineType: string } | null {
+  if (interp.category !== 'planet_angle') return null;
+  const [planet, angle] = interp.triggerKey.split('-');
+  if (!planet || !angle) return null;
+  const lineType = angle.toUpperCase() === 'DSC' ? 'DC' : angle.toUpperCase();
+  return { planet, lineType };
 }
 
 // ─── Grouped data ─────────────────────────────────────────────────────────────
@@ -70,10 +79,12 @@ function InterpRow({
   interp,
   isExpanded,
   onPress,
+  onViewMap,
 }: {
   interp: Interpretation;
   isExpanded: boolean;
   onPress: () => void;
+  onViewMap?: () => void;
 }) {
   const { planet, angle } = parseTitle(interp);
   const isAngle = interp.category === 'angle';
@@ -100,7 +111,18 @@ function InterpRow({
         )}
 
         {isExpanded && (
-          <Text style={styles.rowBody}>{interp.body}</Text>
+          <>
+            <Text style={styles.rowBody}>{interp.body}</Text>
+            {onViewMap && (
+              <TouchableOpacity
+                style={styles.mapLink}
+                onPress={onViewMap}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.mapLinkText}>Show this line on map →</Text>
+              </TouchableOpacity>
+            )}
+          </>
         )}
       </View>
     </TouchableOpacity>
@@ -111,10 +133,20 @@ function InterpRow({
 
 export default function LinesScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   function handleToggle(key: string) {
     setExpandedKey((prev) => (prev === key ? null : key));
+  }
+
+  function handleViewMap(interp: Interpretation) {
+    const params = mapParamsForInterpretation(interp);
+    if (!params) return;
+    router.push({
+      pathname: '/(app)/',
+      params,
+    });
   }
 
   return (
@@ -140,6 +172,7 @@ export default function LinesScreen() {
                 interp={interp}
                 isExpanded={expandedKey === interp.triggerKey}
                 onPress={() => handleToggle(interp.triggerKey)}
+                onViewMap={interp.category === 'planet_angle' ? () => handleViewMap(interp) : undefined}
               />
             ))}
           </View>
@@ -242,4 +275,18 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     lineHeight: 24,
   },
+  mapLink: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.md,
+    backgroundColor: colors.accentYellow,
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  mapLinkText: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.sm,
+    color: colors.textPrimary,
+  }, 
 });

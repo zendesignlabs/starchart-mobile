@@ -1,31 +1,40 @@
 import { Hono } from 'hono'
-import { stripe, TRIAL_DAYS } from '../lib/stripe.js'
+import { stripe, TRIAL_DAYS, PRICE_ID } from '../lib/stripe.js'
+import { verifyAppToken } from '../lib/jwt.js'
 
 export const subscriptionRouter = new Hono()
 
-// Create a checkout session with 7-day trial
-// Body: { email: string, userId: string, priceId: string, successUrl: string, cancelUrl: string }
+// Extract and verify the Bearer token from Authorization header.
+// Returns the email from the token payload, or null if missing/invalid.
+async function emailFromAuth(authHeader: string | undefined): Promise<string | null> {
+  if (!authHeader?.startsWith('Bearer ')) return null
+  try {
+    const payload = await verifyAppToken(authHeader.slice(7))
+    return payload.email ?? null
+  } catch {
+    return null
+  }
+}
+
+// POST /api/subscriptions/create-checkout
+// Requires Bearer token. Creates a Stripe checkout session with 7-day trial.
 subscriptionRouter.post('/create-checkout', async (c) => {
-  const body = await c.req.json<{
-    email: string
-    userId: string
-    priceId: string
+  const email = await emailFromAuth(c.req.header('Authorization'))
+  if (!email) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { successUrl, cancelUrl } = await c.req.json<{
     successUrl: string
     cancelUrl: string
   }>()
 
   try {
-    // Create or retrieve customer
-    const existing = await stripe.customers.list({ email: body.email, limit: 1 })
+    const existing = await stripe.customers.list({ email, limit: 1 })
     let customer: string
 
     if (existing.data.length > 0) {
       customer = existing.data[0].id
     } else {
-      const created = await stripe.customers.create({
-        email: body.email,
-        metadata: { userId: body.userId },
-      })
+      const created = await stripe.customers.create({ email })
       customer = created.id
     }
 
@@ -33,13 +42,10 @@ subscriptionRouter.post('/create-checkout', async (c) => {
       customer,
       mode: 'subscription',
       payment_method_types: ['card'],
-      line_items: [{ price: body.priceId, quantity: 1 }],
-      subscription_data: {
-        trial_period_days: TRIAL_DAYS,
-        metadata: { userId: body.userId },
-      },
-      success_url: body.successUrl,
-      cancel_url: body.cancelUrl,
+      line_items: [{ price: PRICE_ID, quantity: 1 }],
+      subscription_data: { trial_period_days: TRIAL_DAYS },
+      success_url: successUrl,
+      cancel_url: cancelUrl,
     })
 
     return c.json({ url: session.url, sessionId: session.id })
@@ -49,10 +55,11 @@ subscriptionRouter.post('/create-checkout', async (c) => {
   }
 })
 
-// Get subscription status for a customer by email
+// GET /api/subscriptions/status
+// Requires Bearer token. Returns subscription status for the authenticated user.
 subscriptionRouter.get('/status', async (c) => {
-  const email = c.req.query('email')
-  if (!email) return c.json({ error: 'email required' }, 400)
+  const email = await emailFromAuth(c.req.header('Authorization'))
+  if (!email) return c.json({ error: 'Unauthorized' }, 401)
 
   try {
     const customers = await stripe.customers.list({ email, limit: 1 })
@@ -76,7 +83,6 @@ subscriptionRouter.get('/status', async (c) => {
       trialing: sub.status === 'trialing',
       active: sub.status === 'active' || sub.status === 'trialing',
       trialEnd: sub.trial_end,
-      billingCycleAnchor: sub.billing_cycle_anchor,
     })
   } catch (err) {
     console.error('Status check error:', err)
