@@ -46,7 +46,7 @@ const PLANET_SUMMARIES: Record<string, string> = {
 };
 
 function formatDate(d: Date) {
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 function capitalize(s: string) {
@@ -162,8 +162,14 @@ export default function MapScreen() {
     <View style={styles.root}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.appName}>STARCHART</Text>
-        <Text style={styles.dateText}>{formatDate(new Date())}</Text>
+        <View>
+          <Text style={styles.screenEyebrow}>MAP</Text>
+          <Text style={styles.appName}>Your Map Now</Text>
+        </View>
+        <View style={styles.dateBadge}>
+          <Text style={styles.dateLabel}>Today</Text>
+          <Text style={styles.dateText}>{formatDate(new Date())}</Text>
+        </View>
       </View>
 
       {/* Map */}
@@ -209,7 +215,16 @@ export default function MapScreen() {
         <Text style={styles.sheetHeader}>Your map right now</Text>
 
         {activatedList.length === 0 ? (
-          <Text style={styles.sheetEmpty}>No lines strongly activated at the moment.</Text>
+          <View>
+            <Text style={styles.sheetEmpty}>No lines strongly activated at the moment.</Text>
+            <TouchableOpacity
+              style={styles.sheetAction}
+              onPress={() => router.push('/(app)/lines')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.sheetActionText}>Browse all lines →</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
             {activatedList.map((planet) => {
@@ -288,15 +303,35 @@ const styles = StyleSheet.create({
     backgroundColor: colors.backgroundPrimary,
     zIndex: 10,
   },
+  screenEyebrow: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.xs,
+    color: colors.textSecondary,
+    letterSpacing: 1.5,
+    marginBottom: 2,
+  },
   appName: {
     fontFamily: fontFamilies.heading,
     fontSize: fontSizes.xl,
     color: colors.textPrimary,
-    letterSpacing: 2,
+  },
+  dateBadge: {
+    borderWidth: 1,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.backgroundSecondary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    alignItems: 'flex-end',
+  },
+  dateLabel: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.xs,
+    color: colors.textPrimary,
+    textTransform: 'uppercase',
   },
   dateText: {
     fontFamily: fontFamilies.bodyMedium,
-    fontSize: fontSizes.sm,
+    fontSize: fontSizes.xs,
     color: colors.textSecondary,
   },
   map: {
@@ -327,6 +362,20 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.bodyMedium,
     fontSize: fontSizes.sm,
     color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  sheetAction: {
+    alignSelf: 'flex-start',
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.accentYellow,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  sheetActionText: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.sm,
+    color: colors.textPrimary,
   },
   sheetScroll: {
     flex: 1,

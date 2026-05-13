@@ -1,9 +1,42 @@
 import { useEffect, useState } from 'react';
 import { Tabs, useRouter } from 'expo-router';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Text, View } from 'react-native';
 import { colors, fontFamilies, fontSizes } from '../../src/theme';
 import { useAuthStore } from '../../src/store/auth';
 import { getSubscriptionStatus } from '../../src/lib/api';
+
+const TAB_ICONS: Record<string, string> = {
+  index: '◎',
+  chart: '☉',
+  lines: '☷',
+  settings: '⚙︎',
+};
+
+function TabIcon({ name, focused }: { name: string; focused: boolean }) {
+  return (
+    <View
+      style={{
+        width: 28,
+        height: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: focused ? colors.accentYellow : 'transparent',
+        borderWidth: focused ? 1 : 0,
+        borderColor: colors.borderBlack,
+      }}
+    >
+      <Text
+        style={{
+          fontFamily: fontFamilies.heading,
+          fontSize: 16,
+          color: focused ? colors.textPrimary : colors.textSecondary,
+        }}
+      >
+        {TAB_ICONS[name] ?? '·'}
+      </Text>
+    </View>
+  );
+}
 
 export default function AppLayout() {
   const router = useRouter();
@@ -43,8 +76,9 @@ export default function AppLayout() {
 
   return (
     <Tabs
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: false,
+        tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,
         tabBarActiveTintColor: colors.textPrimary,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
@@ -54,11 +88,15 @@ export default function AppLayout() {
           elevation: 0,
           shadowOpacity: 0,
         },
+        tabBarItemStyle: {
+          paddingTop: 6,
+          paddingBottom: 4,
+        },
         tabBarLabelStyle: {
           fontFamily: fontFamilies.bodyMedium,
           fontSize: fontSizes.xs,
         },
-      }}
+      })}
     >
       <Tabs.Screen name="index" options={{ title: 'Map' }} />
       <Tabs.Screen name="chart" options={{ title: 'Chart' }} />
