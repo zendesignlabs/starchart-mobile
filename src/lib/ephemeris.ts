@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { ChartData, AstrocartographyLine, TransitAspect, Planet } from '../types/chart';
+import { transformRawChart } from './transform';
 
 const BASE_URL = `${process.env.EXPO_PUBLIC_API_URL ?? 'https://mobile.starchart.now'}/api/ephemeris`;
 
@@ -12,6 +13,12 @@ const client = axios.create({
 type ChartResponse = ChartData | {
   chartData: ChartData;
   acgLines?: AstrocartographyLine[];
+} | {
+  positions?: unknown[];
+  houses?: unknown;
+  aspects?: unknown[];
+  acgLines?: Record<string, Array<[number, number]>>;
+  calculatedAt?: string;
 };
 
 function unwrapChartResponse(data: ChartResponse): { chartData: ChartData; acgLines: AstrocartographyLine[] } {
@@ -21,7 +28,10 @@ function unwrapChartResponse(data: ChartResponse): { chartData: ChartData; acgLi
       acgLines: Array.isArray(data.acgLines) ? data.acgLines : [],
     };
   }
-  return { chartData: data, acgLines: [] };
+  if ('positions' in data || 'houses' in data) {
+    return transformRawChart(data as Parameters<typeof transformRawChart>[0]);
+  }
+  return { chartData: data as ChartData, acgLines: [] };
 }
 
 function servicePlanetName(planet: Planet): string {
@@ -49,6 +59,7 @@ async function calculateChartBundle(
 ): Promise<{ chartData: ChartData; acgLines: AstrocartographyLine[] }> {
   const response = await client.post<ChartResponse>('/chart', {
     datetime,
+    birthUTC: datetime,
     lat,
     lng,
     houseSystem: 'P',

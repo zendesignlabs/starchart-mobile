@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
@@ -54,19 +55,6 @@ function isStep1Complete(form: FormState) {
   return form.name.trim().length > 0;
 }
 
-function formatDateInput(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 4) return digits;
-  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
-}
-
-function formatTimeInput(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 4);
-  if (digits.length <= 2) return digits;
-  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
-}
-
 function isValidBirthDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
@@ -98,6 +86,57 @@ function isStepComplete(step: number, form: FormState) {
   if (step === 2) return isStep2Complete(form);
   if (step === 3) return isStep3Complete(form);
   return false;
+}
+
+function formatDateForStorage(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatTimeForStorage(date: Date): string {
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${hour}:${minute}`;
+}
+
+function formatDateForDisplay(value: string): string {
+  if (!isValidBirthDate(value)) return 'Choose date';
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatTimeForDisplay(value: string): string {
+  if (!isValidBirthTime(value)) return 'Choose time';
+  const [hour, minute] = value.split(':').map(Number);
+  const d = new Date();
+  d.setHours(hour, minute, 0, 0);
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function datePickerValue(value: string): Date {
+  if (!isValidBirthDate(value)) return new Date(1990, 0, 1);
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function timePickerValue(value: string): Date {
+  const d = new Date();
+  if (isValidBirthTime(value)) {
+    const [hour, minute] = value.split(':').map(Number);
+    d.setHours(hour, minute, 0, 0);
+  } else {
+    d.setHours(12, 0, 0, 0);
+  }
+  return d;
 }
 
 function buildISO(date: string, time: string, timeUnknown: boolean): string {
@@ -144,31 +183,19 @@ function StepName({ form, setForm }: { form: FormState; setForm: (f: FormState) 
 }
 
 function StepDateTime({ form, setForm }: { form: FormState; setForm: (f: FormState) => void }) {
-  const [dateError, setDateError] = useState('');
-  const [timeError, setTimeError] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
-  function handleDateChange(v: string) {
-    const formatted = formatDateInput(v);
-    setDateError('');
-    setForm({ ...form, birthDate: formatted });
+  function handleDatePicked(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS !== 'ios') setShowDatePicker(false);
+    if (event.type === 'dismissed' || !selected) return;
+    setForm({ ...form, birthDate: formatDateForStorage(selected) });
   }
 
-  function handleDateBlur() {
-    if (form.birthDate && !isValidBirthDate(form.birthDate)) {
-      setDateError('Enter a real date as YYYY-MM-DD');
-    }
-  }
-
-  function handleTimeChange(v: string) {
-    const formatted = formatTimeInput(v);
-    setTimeError('');
-    setForm({ ...form, birthTime: formatted });
-  }
-
-  function handleTimeBlur() {
-    if (form.birthTime && !isValidBirthTime(form.birthTime)) {
-      setTimeError('Enter a real time as HH:MM, 24-hour time');
-    }
+  function handleTimePicked(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS !== 'ios') setShowTimePicker(false);
+    if (event.type === 'dismissed' || !selected) return;
+    setForm({ ...form, birthTime: formatTimeForStorage(selected), timeUnknown: false });
   }
 
   return (
@@ -176,33 +203,44 @@ function StepDateTime({ form, setForm }: { form: FormState; setForm: (f: FormSta
       <Text style={stepStyles.label}>When were you born?</Text>
 
       <Text style={stepStyles.sublabel}>Birth date</Text>
-      <TextInput
-        style={[stepStyles.input, dateError ? stepStyles.inputError : null]}
-        value={form.birthDate}
-        onChangeText={handleDateChange}
-        onBlur={handleDateBlur}
-        placeholder="YYYY-MM-DD"
-        placeholderTextColor={colors.textSecondary}
-        keyboardType="number-pad"
-        textContentType="birthdate"
-        maxLength={10}
-      />
-      {dateError ? <Text style={stepStyles.errorText}>{dateError}</Text> : null}
+      <TouchableOpacity
+        style={stepStyles.pickerButton}
+        onPress={() => setShowDatePicker(true)}
+        activeOpacity={0.85}
+      >
+        <Text style={stepStyles.pickerButtonText}>{formatDateForDisplay(form.birthDate)}</Text>
+        <Text style={stepStyles.pickerButtonIcon}>▾</Text>
+      </TouchableOpacity>
+      {showDatePicker && (
+        <DateTimePicker
+          value={datePickerValue(form.birthDate)}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          maximumDate={new Date()}
+          onChange={handleDatePicked}
+        />
+      )}
 
       {!form.timeUnknown && (
         <>
           <Text style={[stepStyles.sublabel, { marginTop: spacing.base }]}>Birth time</Text>
-          <TextInput
-            style={[stepStyles.input, timeError ? stepStyles.inputError : null]}
-            value={form.birthTime}
-            onChangeText={handleTimeChange}
-            onBlur={handleTimeBlur}
-            placeholder="HH:MM (24h)"
-            placeholderTextColor={colors.textSecondary}
-            keyboardType="number-pad"
-            maxLength={5}
-          />
-          {timeError ? <Text style={stepStyles.errorText}>{timeError}</Text> : null}
+          <TouchableOpacity
+            style={stepStyles.pickerButton}
+            onPress={() => setShowTimePicker(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={stepStyles.pickerButtonText}>{formatTimeForDisplay(form.birthTime)}</Text>
+            <Text style={stepStyles.pickerButtonIcon}>▾</Text>
+          </TouchableOpacity>
+          {showTimePicker && (
+            <DateTimePicker
+              value={timePickerValue(form.birthTime)}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              is24Hour={false}
+              onChange={handleTimePicked}
+            />
+          )}
         </>
       )}
 
@@ -574,8 +612,26 @@ const stepStyles = StyleSheet.create({
     padding: spacing.md,
     backgroundColor: colors.backgroundPrimary,
   },
-  inputError: {
-    borderColor: colors.accentPink,
+  pickerButton: {
+    minHeight: 56,
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.backgroundPrimary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pickerButtonText: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.md,
+    color: colors.textPrimary,
+  },
+  pickerButtonIcon: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.md,
+    color: colors.textSecondary,
   },
   largeInput: {
     fontFamily: fontFamilies.heading,
