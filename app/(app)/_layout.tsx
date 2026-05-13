@@ -22,25 +22,25 @@ function TabItem({ name, focused }: { name: string; focused: boolean }) {
         height: 52,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: focused ? colors.accentYellow : 'transparent',
-        borderWidth: focused ? 2 : 0,
-        borderColor: colors.borderBlack,
         paddingTop: 3,
       }}
     >
       <Text
         style={{
           fontFamily: fontFamilies.heading,
-          fontSize: 20,
-          lineHeight: 22,
-          color: focused ? colors.textPrimary : colors.textSecondary,
+          fontSize: focused ? 24 : 21,
+          lineHeight: 26,
+          color: focused ? colors.accentYellow : colors.textSecondary,
+          textShadowColor: focused ? colors.borderBlack : 'transparent',
+          textShadowOffset: focused ? { width: 1, height: 1 } : { width: 0, height: 0 },
+          textShadowRadius: 0,
         }}
       >
         {item.icon}
       </Text>
       <Text
         style={{
-          fontFamily: fontFamilies.bodyMedium,
+          fontFamily: focused ? fontFamilies.heading : fontFamilies.bodyMedium,
           fontSize: fontSizes.xs,
           lineHeight: 14,
           color: focused ? colors.textPrimary : colors.textSecondary,
@@ -98,14 +98,14 @@ export default function AppLayout() {
         tabBarActiveTintColor: colors.textPrimary,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          height: 78,
+          height: 74,
           backgroundColor: colors.backgroundPrimary,
           borderTopWidth: 2,
           borderTopColor: colors.borderBlack,
           elevation: 0,
           shadowOpacity: 0,
           paddingTop: 6,
-          paddingBottom: 8,
+          paddingBottom: 6,
         },
         tabBarItemStyle: {
           alignItems: 'center',
