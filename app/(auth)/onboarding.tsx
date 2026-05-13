@@ -206,15 +206,21 @@ function StepDateTime({ form, setForm }: { form: FormState; setForm: (f: FormSta
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   function handleDatePicked(event: DateTimePickerEvent, selected?: Date) {
-    if (Platform.OS !== 'ios') setShowDatePicker(false);
-    if (event.type === 'dismissed' || !selected) return;
+    if (event.type === 'dismissed' || !selected) {
+      setShowDatePicker(false);
+      return;
+    }
     setForm({ ...form, birthDate: formatDateForStorage(selected) });
+    setShowDatePicker(false);
   }
 
   function handleTimePicked(event: DateTimePickerEvent, selected?: Date) {
-    if (Platform.OS !== 'ios') setShowTimePicker(false);
-    if (event.type === 'dismissed' || !selected) return;
+    if (event.type === 'dismissed' || !selected) {
+      setShowTimePicker(false);
+      return;
+    }
     setForm({ ...form, birthTime: formatTimeForStorage(selected), timeUnknown: false });
+    if (Platform.OS !== 'ios') setShowTimePicker(false);
   }
 
   return (
@@ -224,7 +230,10 @@ function StepDateTime({ form, setForm }: { form: FormState; setForm: (f: FormSta
       <Text style={stepStyles.sublabel}>Birth date</Text>
       <TouchableOpacity
         style={stepStyles.pickerButton}
-        onPress={() => setShowDatePicker(true)}
+        onPress={() => {
+          setShowTimePicker(false);
+          setShowDatePicker(true);
+        }}
         activeOpacity={0.85}
       >
         <Text style={stepStyles.pickerButtonText}>{formatDateForDisplay(form.birthDate)}</Text>
@@ -245,7 +254,10 @@ function StepDateTime({ form, setForm }: { form: FormState; setForm: (f: FormSta
           <Text style={[stepStyles.sublabel, { marginTop: spacing.base }]}>Birth time</Text>
           <TouchableOpacity
             style={stepStyles.pickerButton}
-            onPress={() => setShowTimePicker(true)}
+            onPress={() => {
+              setShowDatePicker(false);
+              setShowTimePicker(true);
+            }}
             activeOpacity={0.85}
           >
             <Text style={stepStyles.pickerButtonText}>{formatTimeForDisplay(form.birthTime)}</Text>
