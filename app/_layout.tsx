@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Stack, usePathname, useRootNavigationState, useRouter } from 'expo-router';
+import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   useFonts,
@@ -42,7 +42,7 @@ export default function RootLayout() {
 
   const { token, hydrated, hydrate } = useAuthStore();
   const router = useRouter();
-  const pathname = usePathname();
+  const segments = useSegments();
   const navState = useRootNavigationState();
 
   useEffect(() => {
@@ -60,24 +60,31 @@ export default function RootLayout() {
     if (!hydrated) return;
     if (!fontsLoaded && !fontError) return;
 
+    const routeSegments = segments as string[];
+    const rootSegment = routeSegments[0];
+    const leafSegment = routeSegments[1];
+    const inAuthGroup = rootSegment === '(auth)';
+    const inAppGroup = rootSegment === '(app)';
+    const inOnboarding = inAuthGroup && leafSegment === 'onboarding';
+
     if (!token) {
-      router.replace('/(auth)/');
+      if (!inAuthGroup) router.replace('/(auth)/');
       return;
     }
-
-    // Allow authenticated users to intentionally revisit onboarding to edit birth data.
-    if (pathname === '/onboarding') return;
 
     // Authenticated — check if they've completed birth data onboarding.
     AsyncStorage.getItem(PROFILE_KEY).then((profile) => {
       if (!profile) {
-        router.replace('/(auth)/onboarding');
-      } else {
+        if (!inOnboarding) router.replace('/(auth)/onboarding');
+        return;
+      }
+
+      // Do not fight tab navigation inside (app), and do not override paywall/onboarding.
+      if (!inAppGroup && !inOnboarding && !(inAuthGroup && leafSegment === 'paywall')) {
         router.replace('/(app)/');
-        // (app)/_layout.tsx handles the subscription gate from here.
       }
     });
-  }, [navState?.key, hydrated, fontsLoaded, fontError, token, pathname]);
+  }, [navState?.key, hydrated, fontsLoaded, fontError, token, segments]);
 
   if ((!fontsLoaded && !fontError) || !hydrated) {
     return null;
