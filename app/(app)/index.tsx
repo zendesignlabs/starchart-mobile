@@ -75,12 +75,15 @@ export default function MapScreen() {
         ephemeris.getTransitsToNatal(p.birthDatetime, p.birthLat, p.birthLng),
       ]);
 
-      setLines(acgLines);
-      setTransits(aspects);
+      const safeLines = Array.isArray(acgLines) ? acgLines : [];
+      const safeAspects = Array.isArray(aspects) ? aspects : [];
+
+      setLines(safeLines);
+      setTransits(safeAspects);
 
       // Activated = natal planets where a transit is within 3° orb
       const activated = new Set<Planet>(
-        aspects.filter((a) => a.orb < 3).map((a) => a.natalPlanet)
+        safeAspects.filter((a) => a.orb < 3).map((a) => a.natalPlanet)
       );
       setActivatedPlanets(activated);
     } catch (e: any) {
@@ -111,7 +114,7 @@ export default function MapScreen() {
   }
 
   // Sort so activated lines render on top (last in array = top in MapView)
-  const sortedLines = [...lines].sort((a, b) => {
+  const sortedLines = [...(Array.isArray(lines) ? lines : [])].sort((a, b) => {
     const aActive = activatedPlanets.has(a.planet) ? 1 : 0;
     const bActive = activatedPlanets.has(b.planet) ? 1 : 0;
     return aActive - bActive;
