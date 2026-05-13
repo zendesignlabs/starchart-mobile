@@ -22,12 +22,41 @@ interface Profile {
   name: string;
   birthDatetime: string;
   birthPlace: string;
+  timeUnknown?: boolean;
 }
 
 function formatTrialEnd(trialEnd: number | null | undefined): string {
   if (!trialEnd) return '';
   const d = new Date(trialEnd * 1000);
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+}
+
+function formatBirthDate(datetime: string): string {
+  const [datePart] = datetime.split('T');
+  const [year, month, day] = datePart.split('-').map(Number);
+  if (!year || !month || !day) return '—';
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatBirthTime(datetime: string, timeUnknown?: boolean): string {
+  if (timeUnknown) return 'Unknown';
+  const timePart = datetime.split('T')[1];
+  if (!timePart) return '—';
+  const [hourRaw, minuteRaw] = timePart.split(':');
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return '—';
+
+  const d = new Date();
+  d.setHours(hour, minute, 0, 0);
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 // ─── Row components ───────────────────────────────────────────────────────────
@@ -153,11 +182,8 @@ export default function SettingsScreen() {
     ]);
   }
 
-  const birthDate = profile
-    ? new Date(profile.birthDatetime).toLocaleDateString('en-US', {
-        month: 'long', day: 'numeric', year: 'numeric',
-      })
-    : '';
+  const birthDate = profile ? formatBirthDate(profile.birthDatetime) : '';
+  const birthTime = profile ? formatBirthTime(profile.birthDatetime, profile.timeUnknown) : '';
 
   function subStatusLabel(): string {
     if (subLoading) return 'Checking…';
@@ -199,7 +225,8 @@ export default function SettingsScreen() {
       {profile && (
         <>
           <SettingsRow label="Name" value={profile.name} />
-          <SettingsRow label="Date & time" value={birthDate} />
+          <SettingsRow label="Date" value={birthDate} />
+          <SettingsRow label="Time" value={birthTime} />
           <SettingsRow label="Place" value={profile.birthPlace} />
         </>
       )}
