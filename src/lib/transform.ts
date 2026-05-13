@@ -71,18 +71,26 @@ function lonToSign(lon: number): { sign: ZodiacSign; degree: number; minute: num
   };
 }
 
-function getHouse(planetLon: number, cusps: number[]): number {
-  const lon = normalizeL(planetLon);
-  for (let i = 0; i < 12; i++) {
-    const start = normalizeL(cusps[i]);
-    const end = normalizeL(cusps[(i + 1) % 12]);
-    if (start < end) {
-      if (lon >= start && lon < end) return i + 1;
-    } else if (lon >= start || lon < end) {
-      return i + 1;
-    }
-  }
-  return 1;
+function signIndex(lon: number): number {
+  return Math.floor(normalizeL(lon) / 30);
+}
+
+function getWholeSignHouse(planetLon: number, ascLon: number): number {
+  const ascSign = signIndex(ascLon);
+  const planetSign = signIndex(planetLon);
+  return ((planetSign - ascSign + 12) % 12) + 1;
+}
+
+function wholeSignHouses(ascLon: number) {
+  const ascSign = signIndex(ascLon);
+  return Array.from({ length: 12 }, (_, i) => {
+    const signStart = normalizeL((ascSign + i) * 30);
+    return {
+      house: i + 1,
+      longitude: signStart,
+      ...lonToSign(signStart),
+    };
+  });
 }
 
 function planetName(name: string): Planet {
@@ -102,16 +110,12 @@ export function transformRawChart(raw: RawChartResponse): { chartData: ChartData
     planets: raw.positions.map((p) => ({
       name: planetName(p.name),
       ...lonToSign(p.longitude),
-      house: getHouse(p.longitude, cusps),
+      house: getWholeSignHouse(p.longitude, houses.asc),
       longitude: p.longitude,
       speed: p.speed,
       retrograde: p.retrograde,
     })),
-    houses: cusps.map((lon, i) => ({
-      house: i + 1,
-      longitude: lon,
-      ...lonToSign(lon),
-    })),
+    houses: wholeSignHouses(houses.asc),
     angles: {
       ascendant: lonToSign(houses.asc),
       midheaven: lonToSign(houses.mc),

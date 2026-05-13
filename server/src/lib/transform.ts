@@ -48,19 +48,26 @@ function lonToSign(lon: number): { sign: ZodiacSign; degree: number; minute: num
   }
 }
 
-// Placidus house assignment given an array of 12 cusp longitudes.
-function getHouse(planetLon: number, cusps: number[]): number {
-  const lon = normalizeL(planetLon)
-  for (let i = 0; i < 12; i++) {
-    const start = normalizeL(cusps[i])
-    const end = normalizeL(cusps[(i + 1) % 12])
-    if (start < end) {
-      if (lon >= start && lon < end) return i + 1
-    } else {
-      if (lon >= start || lon < end) return i + 1
+function signIndex(lon: number): number {
+  return Math.floor(normalizeL(lon) / 30)
+}
+
+function getWholeSignHouse(planetLon: number, ascLon: number): number {
+  const ascSign = signIndex(ascLon)
+  const planetSign = signIndex(planetLon)
+  return ((planetSign - ascSign + 12) % 12) + 1
+}
+
+function wholeSignHouses(ascLon: number) {
+  const ascSign = signIndex(ascLon)
+  return Array.from({ length: 12 }, (_, i) => {
+    const signStart = normalizeL((ascSign + i) * 30)
+    return {
+      house: i + 1,
+      longitude: signStart,
+      ...lonToSign(signStart),
     }
-  }
-  return 1
+  })
 }
 
 // ─── Chart transformation ─────────────────────────────────────────────────────
@@ -94,11 +101,11 @@ export interface ChartData {
   aspects: ReturnType<typeof transformAspects>
 }
 
-export function transformPlanets(positions: EphemerisPosition[], cusps: number[]) {
+export function transformPlanets(positions: EphemerisPosition[], houses: EphemerisHouses) {
   return positions.map((p) => ({
     name: PLANET_NAME_MAP[p.name] ?? (p.name.toLowerCase() as Planet),
     ...lonToSign(p.longitude),
-    house: getHouse(p.longitude, cusps),
+    house: getWholeSignHouse(p.longitude, houses.asc),
     longitude: p.longitude,
     speed: p.speed,
     retrograde: p.retrograde,
@@ -106,11 +113,7 @@ export function transformPlanets(positions: EphemerisPosition[], cusps: number[]
 }
 
 export function transformHouses(houses: EphemerisHouses) {
-  return houses.cusps.map((lon, i) => ({
-    house: i + 1,
-    longitude: lon,
-    ...lonToSign(lon),
-  }))
+  return wholeSignHouses(houses.asc)
 }
 
 export function transformAngles(houses: EphemerisHouses) {

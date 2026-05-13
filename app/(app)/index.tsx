@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import MapView, { Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
 import * as ephemeris from '../../src/lib/ephemeris';
@@ -53,6 +53,18 @@ function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1).replace('_', ' ');
 }
 
+function lineLabel(line: AstrocartographyLine) {
+  return `${capitalize(line.planet)} ${line.lineType}`;
+}
+
+function lineLabelCoordinate(line: AstrocartographyLine) {
+  const coords = Array.isArray(line.coordinates) ? line.coordinates : [];
+  if (coords.length === 0) return null;
+  const [lng, lat] = coords[Math.floor(coords.length / 2)];
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+  return { latitude: lat, longitude: lng };
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function MapScreen() {
@@ -62,6 +74,7 @@ export default function MapScreen() {
   const [transits, setTransits] = useState<TransitAspect[]>([]);
   const [activatedPlanets, setActivatedPlanets] = useState<Set<Planet>>(new Set());
   const [focusPlanet, setFocusPlanet] = useState<Planet | null>(null);
+  const [selectedLine, setSelectedLine] = useState<AstrocartographyLine | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -109,15 +122,15 @@ export default function MapScreen() {
     const isFocused = focusPlanet !== null;
 
     if (isActivated && (!isFocused || focusPlanet === line.planet)) {
-      return { color: colors.accentYellow, width: 3, opacity: 1 };
+      return { color: colors.accentYellow, width: 4, opacity: 1 };
     }
     if (isFocused) {
       if (focusPlanet === line.planet) {
-        return { color: LINE_COLORS[line.lineType] ?? colors.textSecondary, width: 2, opacity: 1 };
+        return { color: LINE_COLORS[line.lineType] ?? colors.textSecondary, width: 3, opacity: 1 };
       }
-      return { color: colors.textSecondary, width: 1, opacity: 0.2 };
+      return { color: colors.textSecondary, width: 1, opacity: 0.18 };
     }
-    return { color: LINE_COLORS[line.lineType] ?? colors.textSecondary, width: 2, opacity: 0.6 };
+    return { color: LINE_COLORS[line.lineType] ?? colors.textSecondary, width: 2, opacity: 0.55 };
   }
 
   // Sort so activated lines render on top (last in array = top in MapView)
@@ -127,7 +140,12 @@ export default function MapScreen() {
     return aActive - bActive;
   });
 
-  const activatedList = Array.from(activatedPlanets).slice(0, 3);
+  const activatedList = Array.from(activatedPlanets).slice(0, 4);
+  const labelLines = sortedLines.filter((line) => {
+    if (selectedLine && line.planet === selectedLine.planet && line.lineType === selectedLine.lineType) return true;
+    if (focusPlanet && line.planet === focusPlanet) return true;
+    return false;
+  });
 
   async function restartOnboarding() {
     await AsyncStorage.removeItem(STORAGE_KEY);
@@ -205,18 +223,48 @@ export default function MapScreen() {
                 lineJoin="round"
                 zIndex={activatedPlanets.has(line.planet) ? 10 : 1}
                 style={{ opacity }}
+                tappable
+                onPress={() => {
+                  setSelectedLine(line);
+                  setFocusPlanet(line.planet);
+                }}
               />
             );
           })}
+        {labelLines.map((line, i) => {
+          const coordinate = lineLabelCoordinate(line);
+          if (!coordinate) return null;
+          const isActivated = activatedPlanets.has(line.planet);
+          return (
+            <Marker
+              key={`label-${line.planet}-${line.lineType}-${i}`}
+              coordinate={coordinate}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+            >
+              <View style={[styles.lineLabel, isActivated && styles.lineLabelActive]}>
+                <Text style={styles.lineLabelText}>{lineLabel(line)}</Text>
+              </View>
+            </Marker>
+          );
+        })}
       </MapView>
 
       {/* Bottom sheet */}
       <View style={styles.bottomSheet}>
-        <Text style={styles.sheetHeader}>Your map right now</Text>
+        <Text style={styles.sheetHeader}>Natal ACG lines</Text>
+        <Text style={styles.sheetNote}>All natal lines are visible. Yellow lines are natal planets currently activated by transits.</Text>
+
+        {selectedLine && (
+          <View style={styles.selectedLineCard}>
+            <Text style={styles.selectedLineTitle}>{lineLabel(selectedLine)}</Text>
+            <Text style={styles.planetSummary}>{PLANET_SUMMARIES[selectedLine.planet] ?? ''}</Text>
+          </View>
+        )}
 
         {activatedList.length === 0 ? (
           <View>
-            <Text style={styles.sheetEmpty}>No lines strongly activated at the moment.</Text>
+            <Text style={styles.sheetEmpty}>No natal planets strongly activated by current transits.</Text>
             <TouchableOpacity
               style={styles.sheetAction}
               onPress={() => router.push('/(app)/lines')}
@@ -233,7 +281,10 @@ export default function MapScreen() {
                 <TouchableOpacity
                   key={planet}
                   style={[styles.planetRow, isFocused && styles.planetRowActive]}
-                  onPress={() => setFocusPlanet(isFocused ? null : planet)}
+                  onPress={() => {
+                    setFocusPlanet(isFocused ? null : planet);
+                    setSelectedLine(null);
+                  }}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.planetName}>
@@ -348,15 +399,34 @@ const styles = StyleSheet.create({
     paddingTop: spacing.base,
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.base,
-    maxHeight: 260,
+    maxHeight: 300,
   },
   sheetHeader: {
     fontFamily: fontFamilies.heading,
     fontSize: fontSizes.lg,
     color: colors.textPrimary,
-    marginBottom: spacing.md,
+    marginBottom: spacing.xs,
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  sheetNote: {
+    fontFamily: fontFamilies.body,
+    fontSize: fontSizes.xs,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+    lineHeight: 16,
+  },
+  selectedLineCard: {
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.accentYellow,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  selectedLineTitle: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.base,
+    color: colors.textPrimary,
   },
   sheetEmpty: {
     fontFamily: fontFamilies.bodyMedium,
@@ -402,5 +472,21 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  lineLabel: {
+    borderWidth: 1,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.backgroundPrimary,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  lineLabelActive: {
+    backgroundColor: colors.accentYellow,
+    borderWidth: 2,
+  },
+  lineLabelText: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: 10,
+    color: colors.textPrimary,
   },
 });

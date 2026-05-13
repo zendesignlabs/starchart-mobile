@@ -45,7 +45,7 @@ ephemerisRouter.post('/chart', async (c) => {
 
     const chartData = {
       calculatedAt: raw.calculatedAt,
-      planets: transformPlanets(raw.positions, raw.houses.cusps),
+      planets: transformPlanets(raw.positions, raw.houses),
       houses: transformHouses(raw.houses),
       angles: transformAngles(raw.houses),
       aspects: transformAspects(raw.aspects),
