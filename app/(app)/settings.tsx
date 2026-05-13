@@ -116,14 +116,16 @@ export default function SettingsScreen() {
   async function handleEditBirthData() {
     Alert.alert(
       'Edit birth data',
-      'This will take you back through onboarding and recalculate your chart. Continue?',
+      'This will let you update date, time, and place, then recalculate your chart. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Continue',
-          onPress: async () => {
-            await AsyncStorage.removeItem(PROFILE_KEY);
-            router.replace('/(auth)/onboarding');
+          onPress: () => {
+            router.replace({
+              pathname: '/(auth)/onboarding',
+              params: { mode: 'editBirthData' },
+            });
           },
         },
       ]

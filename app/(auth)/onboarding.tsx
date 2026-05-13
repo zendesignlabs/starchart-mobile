@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
 import * as ephemeris from '../../src/lib/ephemeris';
@@ -33,6 +33,16 @@ interface FormState {
   placeName: string;
   lat: number | null;
   lng: number | null;
+}
+
+interface StoredProfile {
+  name: string;
+  birthDatetime: string;
+  birthPlace: string;
+  birthLat: number;
+  birthLng: number;
+  timeUnknown?: boolean;
+  createdAt?: string;
 }
 
 const TOTAL_STEPS = 3;
@@ -95,6 +105,22 @@ function buildISO(date: string, time: string, timeUnknown: boolean): string {
     return `${date}T12:00:00.000Z`;
   }
   return `${date}T${time}:00.000Z`;
+}
+
+function profileToForm(profile: StoredProfile): FormState {
+  const [datePart, timePart = ''] = profile.birthDatetime.split('T');
+  const time = timePart.slice(0, 5);
+  const timeUnknown = profile.timeUnknown ?? false;
+
+  return {
+    name: profile.name,
+    birthDate: datePart,
+    birthTime: timeUnknown ? '' : time,
+    timeUnknown,
+    placeName: profile.birthPlace,
+    lat: profile.birthLat,
+    lng: profile.birthLng,
+  };
 }
 
 // ─── Step components ──────────────────────────────────────────────────────────
@@ -290,7 +316,9 @@ function StepPlace({ form, setForm }: { form: FormState; setForm: (f: FormState)
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const isEditingBirthData = params.mode === 'editBirthData';
+  const [step, setStep] = useState(isEditingBirthData ? 2 : 1);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [form, setForm] = useState<FormState>({
@@ -305,6 +333,17 @@ export default function OnboardingScreen() {
 
   const canAdvance = isStepComplete(step, form);
 
+  useEffect(() => {
+    if (!isEditingBirthData) return;
+
+    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
+      if (!raw) return;
+      const profile: StoredProfile = JSON.parse(raw);
+      setForm(profileToForm(profile));
+      setStep(2);
+    });
+  }, [isEditingBirthData]);
+
   async function handleFinish() {
     if (!canAdvance) return;
     setSubmitting(true);
@@ -312,14 +351,19 @@ export default function OnboardingScreen() {
     try {
       const isoDatetime = buildISO(form.birthDate, form.birthTime, form.timeUnknown);
       const chartData = await ephemeris.calculateChart(isoDatetime, form.lat!, form.lng!);
+      const existingRaw = await AsyncStorage.getItem(STORAGE_KEY);
+      const existingProfile = existingRaw ? JSON.parse(existingRaw) : null;
       const profile = {
+        ...existingProfile,
         name: form.name.trim(),
         birthDatetime: isoDatetime,
         birthPlace: form.placeName,
         birthLat: form.lat!,
         birthLng: form.lng!,
+        timeUnknown: form.timeUnknown,
         chartData,
-        createdAt: new Date().toISOString(),
+        createdAt: existingProfile?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
       router.replace('/(app)/');
@@ -336,10 +380,16 @@ export default function OnboardingScreen() {
   }
 
   function handleBack() {
+    if (isEditingBirthData && step === 2) {
+      router.replace('/(app)/settings');
+      return;
+    }
     if (step > 1) setStep(step - 1);
   }
 
-  const stepLabel = `Step ${step} of ${TOTAL_STEPS}`;
+  const stepLabel = isEditingBirthData
+    ? `Birth data · ${step === 2 ? 'Date & time' : 'Place'}`
+    : `Step ${step} of ${TOTAL_STEPS}`;
 
   return (
     <KeyboardAvoidingView
@@ -363,7 +413,7 @@ export default function OnboardingScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {step === 1 && <StepName form={form} setForm={setForm} />}
+        {!isEditingBirthData && step === 1 && <StepName form={form} setForm={setForm} />}
         {step === 2 && <StepDateTime form={form} setForm={setForm} />}
         {step === 3 && <StepPlace form={form} setForm={setForm} />}
 
@@ -394,7 +444,7 @@ export default function OnboardingScreen() {
             <ActivityIndicator color={colors.textPrimary} />
           ) : (
             <Text style={styles.nextBtnText}>
-              {step === TOTAL_STEPS ? 'Begin' : 'Next'}
+              {step === TOTAL_STEPS ? (isEditingBirthData ? 'Save' : 'Begin') : 'Next'}
             </Text>
           )}
         </TouchableOpacity>

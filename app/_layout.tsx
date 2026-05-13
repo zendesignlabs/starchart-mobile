@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Stack, useRootNavigationState, useRouter } from 'expo-router';
+import { Stack, usePathname, useRootNavigationState, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   useFonts,
@@ -42,6 +42,7 @@ export default function RootLayout() {
 
   const { token, hydrated, hydrate } = useAuthStore();
   const router = useRouter();
+  const pathname = usePathname();
   const navState = useRootNavigationState();
 
   useEffect(() => {
@@ -64,6 +65,9 @@ export default function RootLayout() {
       return;
     }
 
+    // Allow authenticated users to intentionally revisit onboarding to edit birth data.
+    if (pathname === '/onboarding') return;
+
     // Authenticated — check if they've completed birth data onboarding.
     AsyncStorage.getItem(PROFILE_KEY).then((profile) => {
       if (!profile) {
@@ -73,7 +77,7 @@ export default function RootLayout() {
         // (app)/_layout.tsx handles the subscription gate from here.
       }
     });
-  }, [navState?.key, hydrated, fontsLoaded, fontError, token]);
+  }, [navState?.key, hydrated, fontsLoaded, fontError, token, pathname]);
 
   if ((!fontsLoaded && !fontError) || !hydrated) {
     return null;
