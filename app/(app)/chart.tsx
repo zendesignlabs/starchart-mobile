@@ -82,11 +82,11 @@ function AngleRow({ label, sign, degree, minute }: {
   return (
     <View style={sStyles.row}>
       <View style={sStyles.rowLeft}>
-        <Text style={sStyles.symbolText}>{label}</Text>
+        <Text style={sStyles.angleLabel} numberOfLines={1}>{label}</Text>
       </View>
       <View style={sStyles.rowRight}>
         <Text style={sStyles.signSymbol}>{SIGN_SYMBOLS[sign]}</Text>
-        <Text style={sStyles.signName}>{capitalize(sign)}</Text>
+        <Text style={sStyles.signName} numberOfLines={1}>{capitalize(sign)}</Text>
         <Text style={sStyles.degree}>{formatDegree(degree, minute)}</Text>
       </View>
     </View>
@@ -100,16 +100,49 @@ function PlanetRow({ planet }: { planet: PlanetPosition }) {
         <Text style={[sStyles.symbolText, { color: accentForPlanet(planet.name) }]}>
           {PLANET_SYMBOLS[planet.name]}
         </Text>
-        <Text style={sStyles.planetName}>
+        <Text style={sStyles.planetName} numberOfLines={1}>
           {capitalize(planet.name)}{planet.retrograde ? ' ℞' : ''}
         </Text>
       </View>
       <View style={sStyles.rowRight}>
         <Text style={sStyles.signSymbol}>{SIGN_SYMBOLS[planet.sign]}</Text>
-        <Text style={sStyles.signName}>{capitalize(planet.sign)}</Text>
+        <Text style={sStyles.signName} numberOfLines={1}>{capitalize(planet.sign)}</Text>
         <Text style={sStyles.degree}>{formatDegree(planet.degree, planet.minute)}</Text>
         <View style={sStyles.housePill}>
           <Text style={sStyles.houseText}>{planet.house}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function AspectRow({ aspect, index }: { aspect: ChartData['aspects'][number]; index: number }) {
+  const isHarmonious = HARMONIOUS.includes(aspect.type);
+  const isChallenging = CHALLENGING.includes(aspect.type);
+  const accentColor = isHarmonious
+    ? colors.accentGreen
+    : isChallenging
+    ? colors.accentPink
+    : colors.accentBlue;
+
+  return (
+    <View key={index} style={[sStyles.row, sStyles.aspectRow]}>
+      <View style={sStyles.aspectGlyphs}>
+        <Text style={[sStyles.aspectPlanetGlyph, { color: accentColor }]}>{PLANET_SYMBOLS[aspect.planet1]}</Text>
+        <Text style={[sStyles.aspectSymbol, { color: accentColor }]}>{ASPECT_SYMBOLS[aspect.type]}</Text>
+        <Text style={[sStyles.aspectPlanetGlyph, { color: accentColor }]}>{PLANET_SYMBOLS[aspect.planet2]}</Text>
+      </View>
+      <View style={sStyles.aspectDetails}>
+        <Text style={sStyles.aspectName} numberOfLines={2}>
+          {capitalize(aspect.planet1)} {capitalize(aspect.type)} {capitalize(aspect.planet2)}
+        </Text>
+        <View style={sStyles.aspectMetaRow}>
+          <Text style={sStyles.aspectOrb}>{aspect.orb.toFixed(1)}° orb</Text>
+          {aspect.applying && (
+            <View style={[sStyles.applyingPill, { backgroundColor: colors.accentYellow }]}>
+              <Text style={sStyles.houseText}>applying</Text>
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -159,7 +192,7 @@ export default function ChartScreen() {
 
   if (!chart?.planets || !chart?.angles) {
     return (
-      <View style={[sStyles.container, { paddingTop: insets.top }]}> 
+      <View style={[sStyles.container, { paddingTop: insets.top }]}>
         <View style={sStyles.header}>
           <Text style={sStyles.heading}>Natal Chart</Text>
           <Text style={sStyles.subheading}>Chart data could not be loaded.</Text>
@@ -236,41 +269,9 @@ export default function ChartScreen() {
       {significantAspects.length > 0 && (
         <>
           <SectionHeader label="Key Aspects  (orb ≤ 3°)" />
-          {significantAspects.map((a, i) => {
-            const isHarmonious = HARMONIOUS.includes(a.type);
-            const isChallenging = CHALLENGING.includes(a.type);
-            const accentColor = isHarmonious
-              ? colors.accentGreen
-              : isChallenging
-              ? colors.accentPink
-              : colors.accentBlue;
-            return (
-              <View key={i} style={sStyles.row}>
-                <View style={sStyles.rowLeft}>
-                  <Text style={[sStyles.symbolText, { color: accentColor }]}>
-                    {PLANET_SYMBOLS[a.planet1]}
-                  </Text>
-                  <Text style={[sStyles.aspectSymbol, { color: accentColor }]}>
-                    {ASPECT_SYMBOLS[a.type]}
-                  </Text>
-                  <Text style={[sStyles.symbolText, { color: accentColor }]}>
-                    {PLANET_SYMBOLS[a.planet2]}
-                  </Text>
-                </View>
-                <View style={sStyles.rowRight}>
-                  <Text style={sStyles.aspectName}>
-                    {capitalize(a.planet1)} {capitalize(a.type)} {capitalize(a.planet2)}
-                  </Text>
-                  <Text style={sStyles.degree}>{a.orb.toFixed(1)}°</Text>
-                  {a.applying && (
-                    <View style={[sStyles.housePill, { backgroundColor: colors.accentYellow }]}>
-                      <Text style={sStyles.houseText}>→</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            );
-          })}
+          {significantAspects.map((a, i) => (
+            <AspectRow key={`${a.planet1}-${a.type}-${a.planet2}-${i}`} aspect={a} index={i} />
+          ))}
         </>
       )}
     </ScrollView>
@@ -330,7 +331,7 @@ const sStyles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.backgroundSecondary,
-    minHeight: 48,
+    minHeight: 52,
   },
   rowLeft: {
     flexDirection: 'row',
@@ -338,6 +339,7 @@ const sStyles = StyleSheet.create({
     gap: spacing.xs,
     flex: 1,
     minWidth: 0,
+    paddingRight: spacing.sm,
   },
   rowRight: {
     flexDirection: 'row',
@@ -347,33 +349,44 @@ const sStyles = StyleSheet.create({
   },
   symbolText: {
     fontFamily: fontFamilies.heading,
-    fontSize: fontSizes.md,
+    fontSize: fontSizes.lg,
     color: colors.textPrimary,
-    width: 22,
+    width: 28,
     textAlign: 'center',
+  },
+  angleLabel: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.base,
+    color: colors.textPrimary,
+    width: 48,
+    textAlign: 'left',
+    letterSpacing: 0.5,
   },
   planetName: {
     fontFamily: fontFamilies.bodyMedium,
     fontSize: fontSizes.sm,
     color: colors.textPrimary,
     flexShrink: 1,
+    minWidth: 0,
   },
   signSymbol: {
     fontFamily: fontFamilies.body,
-    fontSize: fontSizes.sm,
+    fontSize: fontSizes.base,
     color: colors.textPrimary,
+    width: 18,
+    textAlign: 'center',
   },
   signName: {
     fontFamily: fontFamilies.body,
     fontSize: fontSizes.xs,
     color: colors.textSecondary,
-    width: 58,
+    width: 64,
   },
   degree: {
     fontFamily: fontFamilies.body,
     fontSize: fontSizes.xs,
     color: colors.textSecondary,
-    width: 44,
+    width: 46,
     textAlign: 'right',
   },
   housePill: {
@@ -390,14 +403,57 @@ const sStyles = StyleSheet.create({
     fontSize: fontSizes.xs,
     color: colors.textPrimary,
   },
+  aspectRow: {
+    alignItems: 'flex-start',
+    minHeight: 68,
+    paddingVertical: spacing.md,
+  },
+  aspectGlyphs: {
+    width: 94,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingRight: spacing.md,
+  },
+  aspectPlanetGlyph: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.xl,
+    lineHeight: 28,
+    width: 28,
+    textAlign: 'center',
+  },
   aspectSymbol: {
     fontFamily: fontFamilies.heading,
-    fontSize: fontSizes.md,
+    fontSize: fontSizes.lg,
+    lineHeight: 26,
+    width: 24,
+    textAlign: 'center',
+  },
+  aspectDetails: {
+    flex: 1,
+    minWidth: 0,
   },
   aspectName: {
-    fontFamily: fontFamilies.body,
+    fontFamily: fontFamilies.bodyMedium,
     fontSize: fontSizes.sm,
     color: colors.textPrimary,
-    flex: 1,
+    lineHeight: 19,
+  },
+  aspectMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  aspectOrb: {
+    fontFamily: fontFamilies.body,
+    fontSize: fontSizes.xs,
+    color: colors.textSecondary,
+  },
+  applyingPill: {
+    borderWidth: 1,
+    borderColor: colors.borderBlack,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
   },
 });
