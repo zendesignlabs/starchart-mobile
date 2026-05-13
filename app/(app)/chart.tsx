@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
+import * as ephemeris from '../../src/lib/ephemeris';
 import type {
   ChartData,
   PlanetPosition,
@@ -155,8 +156,12 @@ interface Profile {
   name: string;
   birthDatetime: string;
   birthPlace: string;
+  birthLat: number;
+  birthLng: number;
   birthLocalDate?: string;
   chartData: ChartData | { chartData: ChartData };
+  chartCalculatedFor?: string;
+  updatedAt?: string;
 }
 
 function normalizeChartData(chartData: Profile['chartData']): ChartData | null {
@@ -171,9 +176,47 @@ export default function ChartScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
-        setProfile(raw ? JSON.parse(raw) : null);
-      });
+      let cancelled = false;
+
+      async function loadAndRefreshChart() {
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          if (!cancelled) setProfile(null);
+          return;
+        }
+
+        const savedProfile: Profile = JSON.parse(raw);
+        if (!cancelled) setProfile(savedProfile);
+
+        const needsRecalc =
+          savedProfile.birthDatetime &&
+          typeof savedProfile.birthLat === 'number' &&
+          typeof savedProfile.birthLng === 'number' &&
+          savedProfile.chartCalculatedFor !== savedProfile.birthDatetime;
+
+        if (!needsRecalc) return;
+
+        try {
+          const chartData = await ephemeris.calculateChart(
+            savedProfile.birthDatetime,
+            savedProfile.birthLat,
+            savedProfile.birthLng
+          );
+          const refreshedProfile = {
+            ...savedProfile,
+            chartData,
+            chartCalculatedFor: savedProfile.birthDatetime,
+            updatedAt: new Date().toISOString(),
+          };
+          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(refreshedProfile));
+          if (!cancelled) setProfile(refreshedProfile);
+        } catch {
+          // Keep the saved chart visible if refresh fails; Settings can still edit/retry.
+        }
+      }
+
+      loadAndRefreshChart();
+      return () => { cancelled = true; };
     }, [])
   );
 

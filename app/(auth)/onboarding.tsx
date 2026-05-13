@@ -428,6 +428,7 @@ export default function OnboardingScreen() {
         birthLocalDate: form.birthDate,
         birthLocalTime: localTime,
         chartData,
+        chartCalculatedFor: isoDatetime,
         createdAt: existingProfile?.createdAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         revision: Date.now(),

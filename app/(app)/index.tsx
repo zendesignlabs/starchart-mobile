@@ -16,6 +16,7 @@ interface Profile {
   birthLat: number;
   birthLng: number;
   chartData: import('../../src/types/chart').ChartData;
+  chartCalculatedFor?: string;
   createdAt: string;
 }
 
@@ -130,10 +131,22 @@ export default function MapScreen() {
         return;
       }
 
-      const [acgLines, aspects] = await Promise.all([
+      const [chartData, acgLines, aspects] = await Promise.all([
+        ephemeris.calculateChart(p.birthDatetime, p.birthLat, p.birthLng),
         ephemeris.calculateACGLines(p.birthDatetime, p.birthLat, p.birthLng),
         ephemeris.getTransitsToNatal(p.birthDatetime, p.birthLat, p.birthLng),
       ]);
+
+      if (p.chartCalculatedFor !== p.birthDatetime) {
+        const refreshedProfile = {
+          ...p,
+          chartData,
+          chartCalculatedFor: p.birthDatetime,
+          updatedAt: new Date().toISOString(),
+        };
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(refreshedProfile));
+        setProfile(refreshedProfile);
+      }
 
       const safeLines = Array.isArray(acgLines) ? acgLines : [];
       const safeAspects = Array.isArray(aspects) ? aspects : [];
