@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
@@ -77,10 +77,22 @@ function lineLabelCoordinate(line: AstrocartographyLine) {
   return { latitude: lat, longitude: lng };
 }
 
+function isPlanet(value: string | undefined): value is Planet {
+  return !!value && [
+    'sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter',
+    'saturn', 'uranus', 'neptune', 'pluto', 'north_node', 'chiron',
+  ].includes(value);
+}
+
+function isLineType(value: string | undefined): value is LineType {
+  return value === 'AC' || value === 'DC' || value === 'MC' || value === 'IC';
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function MapScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ planet?: string; lineType?: string }>();
   const mapRef = useRef<MapView | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [lines, setLines] = useState<AstrocartographyLine[]>([]);
@@ -132,6 +144,26 @@ export default function MapScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!isPlanet(params.planet) || !isLineType(params.lineType) || lines.length === 0) return;
+
+    const match = lines.find((line) => line.planet === params.planet && line.lineType === params.lineType);
+    if (!match) return;
+
+    const coordinate = lineLabelCoordinate(match);
+    setFocusPlanet(match.planet);
+    setSelectedLine(match);
+    setSheetCollapsed(false);
+
+    if (coordinate) {
+      mapRef.current?.animateToRegion({
+        ...coordinate,
+        latitudeDelta: 28,
+        longitudeDelta: 28,
+      }, 650);
+    }
+  }, [params.planet, params.lineType, lines]);
 
   // ── Render helpers ──────────────────────────────────────────────────────────
 
