@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
@@ -109,11 +109,21 @@ export default function MapScreen() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
+      if (!raw) {
+        setProfile(null);
+        setLines([]);
+        setTransits([]);
+        setActivatedPlanets(new Set());
+        return;
+      }
       const p: Profile = JSON.parse(raw);
       setProfile(p);
+      setSelectedLine(null);
+      setFocusPlanet(null);
 
       if (!p.birthDatetime || typeof p.birthLat !== 'number' || typeof p.birthLng !== 'number') {
         setError('Your saved birth data is incomplete. Please rerun onboarding.');
@@ -143,7 +153,11 @@ export default function MapScreen() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   useEffect(() => {
     if (!isPlanet(params.planet) || !isLineType(params.lineType) || lines.length === 0) return;

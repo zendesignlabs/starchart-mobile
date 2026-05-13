@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
 import { useAuthStore } from '../../src/store/auth';
@@ -123,10 +123,15 @@ export default function SettingsScreen() {
   const [subStatus, setSubStatus] = useState<SubscriptionStatus | null>(null);
   const [subLoading, setSubLoading] = useState(true);
 
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem(PROFILE_KEY).then((raw) => {
+        setProfile(raw ? JSON.parse(raw) : null);
+      });
+    }, [])
+  );
+
   useEffect(() => {
-    AsyncStorage.getItem(PROFILE_KEY).then((raw) => {
-      if (raw) setProfile(JSON.parse(raw));
-    });
     getSubscriptionStatus()
       .then(setSubStatus)
       .catch(() => setSubStatus(null))

@@ -430,6 +430,7 @@ export default function OnboardingScreen() {
         chartData,
         createdAt: existingProfile?.createdAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        revision: Date.now(),
       };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
       router.replace('/(app)/');
