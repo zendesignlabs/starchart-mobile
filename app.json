@@ -21,7 +21,7 @@
       "package": "com.zendesignlabs.starchart",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFEF9"
+        "backgroundColor": "#ED749D"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false

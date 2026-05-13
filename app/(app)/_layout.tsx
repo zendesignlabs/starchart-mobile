@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { AppState, AppStateStatus, Text, View } from 'react-native';
-import { colors, fontFamilies, fontSizes } from '../../src/theme';
+import { colors, fontFamilies } from '../../src/theme';
 import { useAuthStore } from '../../src/store/auth';
 import { getSubscriptionStatus } from '../../src/lib/api';
 
 const TAB_ITEMS: Record<string, { icon: string; label: string }> = {
-  index: { icon: '◎', label: 'Map' },
-  chart: { icon: '☉', label: 'Chart' },
+  index: { icon: '✦', label: 'Map' },
+  chart: { icon: '◎', label: 'Chart' },
   lines: { icon: '☷', label: 'Lines' },
   settings: { icon: '⚙︎', label: 'Settings' },
 };
@@ -28,9 +28,9 @@ function TabItem({ name, focused }: { name: string; focused: boolean }) {
       <Text
         style={{
           fontFamily: fontFamilies.heading,
-          fontSize: focused ? 24 : 21,
-          lineHeight: 26,
-          color: focused ? colors.accentYellow : colors.textSecondary,
+          fontSize: focused ? 34 : 30,
+          lineHeight: 36,
+          color: focused ? colors.accentPink : colors.textSecondary,
           textShadowColor: focused ? colors.borderBlack : 'transparent',
           textShadowOffset: focused ? { width: 1, height: 1 } : { width: 0, height: 0 },
           textShadowRadius: 0,
@@ -41,8 +41,8 @@ function TabItem({ name, focused }: { name: string; focused: boolean }) {
       <Text
         style={{
           fontFamily: focused ? fontFamilies.heading : fontFamilies.bodyMedium,
-          fontSize: fontSizes.xs,
-          lineHeight: 14,
+          fontSize: 11,
+          lineHeight: 13,
           color: focused ? colors.textPrimary : colors.textSecondary,
           marginTop: 2,
         }}
@@ -98,7 +98,7 @@ export default function AppLayout() {
         tabBarActiveTintColor: colors.textPrimary,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          height: 74,
+          height: 78,
           backgroundColor: colors.backgroundPrimary,
           borderTopWidth: 2,
           borderTopColor: colors.borderBlack,
