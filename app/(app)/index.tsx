@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,6 +17,18 @@ interface Profile {
   birthLng: number;
   chartData: import('../../src/types/chart').ChartData;
   createdAt: string;
+}
+
+interface PlaceResult {
+  display_name: string;
+  lat: string;
+  lon: string;
+}
+
+interface FocusPlace {
+  name: string;
+  latitude: number;
+  longitude: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -69,12 +81,18 @@ function lineLabelCoordinate(line: AstrocartographyLine) {
 
 export default function MapScreen() {
   const router = useRouter();
+  const mapRef = useRef<MapView | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [lines, setLines] = useState<AstrocartographyLine[]>([]);
   const [transits, setTransits] = useState<TransitAspect[]>([]);
   const [activatedPlanets, setActivatedPlanets] = useState<Set<Planet>>(new Set());
   const [focusPlanet, setFocusPlanet] = useState<Planet | null>(null);
   const [selectedLine, setSelectedLine] = useState<AstrocartographyLine | null>(null);
+  const [sheetCollapsed, setSheetCollapsed] = useState(false);
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [placeResults, setPlaceResults] = useState<PlaceResult[]>([]);
+  const [placeSearching, setPlaceSearching] = useState(false);
+  const [focusPlace, setFocusPlace] = useState<FocusPlace | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -147,6 +165,42 @@ export default function MapScreen() {
     return false;
   });
 
+  async function searchPlaces() {
+    const q = placeQuery.trim();
+    if (q.length < 2) return;
+    setPlaceSearching(true);
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`;
+      const res = await fetch(url, {
+        headers: { 'Accept-Language': 'en', 'User-Agent': 'starchart-mobile/1.0' },
+      });
+      const data: PlaceResult[] = await res.json();
+      setPlaceResults(Array.isArray(data) ? data : []);
+    } catch {
+      setPlaceResults([]);
+    } finally {
+      setPlaceSearching(false);
+    }
+  }
+
+  function focusOnPlace(place: PlaceResult) {
+    const latitude = parseFloat(place.lat);
+    const longitude = parseFloat(place.lon);
+    if (Number.isNaN(latitude) || Number.isNaN(longitude)) return;
+
+    const focused = { name: place.display_name, latitude, longitude };
+    setFocusPlace(focused);
+    setPlaceQuery(place.display_name.split(',').slice(0, 2).join(','));
+    setPlaceResults([]);
+    setSheetCollapsed(true);
+    mapRef.current?.animateToRegion({
+      latitude,
+      longitude,
+      latitudeDelta: 22,
+      longitudeDelta: 22,
+    }, 650);
+  }
+
   async function restartOnboarding() {
     await AsyncStorage.removeItem(STORAGE_KEY);
     router.replace('/(auth)/onboarding');
@@ -190,8 +244,46 @@ export default function MapScreen() {
         </View>
       </View>
 
+      {/* Place search */}
+      <View style={styles.searchBox}>
+        <TextInput
+          style={styles.searchInput}
+          value={placeQuery}
+          onChangeText={(v) => {
+            setPlaceQuery(v);
+            if (placeResults.length > 0) setPlaceResults([]);
+          }}
+          placeholder="Search a place"
+          placeholderTextColor={colors.textSecondary}
+          returnKeyType="search"
+          onSubmitEditing={searchPlaces}
+        />
+        <TouchableOpacity style={styles.searchButton} onPress={searchPlaces} activeOpacity={0.85}>
+          {placeSearching ? (
+            <ActivityIndicator color={colors.textPrimary} />
+          ) : (
+            <Text style={styles.searchButtonText}>Go</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+      {placeResults.length > 0 && (
+        <View style={styles.searchResults}>
+          {placeResults.map((place, i) => (
+            <TouchableOpacity
+              key={`${place.lat}-${place.lon}-${i}`}
+              style={[styles.searchResultRow, i < placeResults.length - 1 && styles.searchResultBorder]}
+              onPress={() => focusOnPlace(place)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.searchResultText} numberOfLines={2}>{place.display_name}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       {/* Map */}
       <MapView
+        ref={mapRef}
         style={styles.map}
         initialRegion={{
           latitude: profile?.birthLat ?? 20,
@@ -231,6 +323,13 @@ export default function MapScreen() {
               />
             );
           })}
+        {focusPlace && (
+          <Marker coordinate={{ latitude: focusPlace.latitude, longitude: focusPlace.longitude }}>
+            <View style={styles.placeMarker}>
+              <Text style={styles.placeMarkerText}>◆</Text>
+            </View>
+          </Marker>
+        )}
         {labelLines.map((line, i) => {
           const coordinate = lineLabelCoordinate(line);
           if (!coordinate) return null;
@@ -251,8 +350,22 @@ export default function MapScreen() {
       </MapView>
 
       {/* Bottom sheet */}
-      <View style={styles.bottomSheet}>
-        <Text style={styles.sheetHeader}>Natal ACG lines</Text>
+      <View style={[styles.bottomSheet, sheetCollapsed && styles.bottomSheetCollapsed]}>
+        <TouchableOpacity
+          style={styles.sheetHandle}
+          onPress={() => setSheetCollapsed(!sheetCollapsed)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.sheetHeader}>Natal ACG lines</Text>
+          <Text style={styles.sheetToggle}>{sheetCollapsed ? 'Expand ↑' : 'Collapse ↓'}</Text>
+        </TouchableOpacity>
+
+        {sheetCollapsed ? (
+          <Text style={styles.sheetNoteCollapsed}>
+            {selectedLine ? lineLabel(selectedLine) : `${lines.length} natal lines visible`}
+          </Text>
+        ) : (
+          <>
         <Text style={styles.sheetNote}>All natal lines are visible. Yellow lines are natal planets currently activated by transits.</Text>
 
         {selectedLine && (
@@ -297,6 +410,8 @@ export default function MapScreen() {
               );
             })}
           </ScrollView>
+        )}
+          </>
         )}
       </View>
     </View>
@@ -388,6 +503,76 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
+  searchBox: {
+    position: 'absolute',
+    top: 118,
+    left: spacing.base,
+    right: spacing.base,
+    zIndex: 20,
+    flexDirection: 'row',
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.backgroundPrimary,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.sm,
+    color: colors.textPrimary,
+  },
+  searchButton: {
+    width: 58,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderLeftWidth: 2,
+    borderLeftColor: colors.borderBlack,
+    backgroundColor: colors.accentYellow,
+  },
+  searchButtonText: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.sm,
+    color: colors.textPrimary,
+  },
+  searchResults: {
+    position: 'absolute',
+    top: 164,
+    left: spacing.base,
+    right: spacing.base,
+    zIndex: 21,
+    borderWidth: 2,
+    borderTopWidth: 0,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.backgroundPrimary,
+  },
+  searchResultRow: {
+    padding: spacing.sm,
+  },
+  searchResultBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderBlack,
+  },
+  searchResultText: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.xs,
+    color: colors.textPrimary,
+  },
+  placeMarker: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.accentYellow,
+  },
+  placeMarkerText: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.md,
+    color: colors.textPrimary,
+  },
   bottomSheet: {
     position: 'absolute',
     bottom: 0,
@@ -396,10 +581,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.backgroundPrimary,
     borderTopWidth: 2,
     borderTopColor: colors.borderBlack,
-    paddingTop: spacing.base,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.base,
     maxHeight: 300,
+  },
+  bottomSheetCollapsed: {
+    maxHeight: 92,
+    paddingBottom: spacing.md,
+  },
+  sheetHandle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    minHeight: 32,
   },
   sheetHeader: {
     fontFamily: fontFamilies.heading,
@@ -409,12 +604,23 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
+  sheetToggle: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.xs,
+    color: colors.textSecondary,
+    textDecorationLine: 'underline',
+  },
   sheetNote: {
     fontFamily: fontFamilies.body,
     fontSize: fontSizes.xs,
     color: colors.textSecondary,
     marginBottom: spacing.md,
     lineHeight: 16,
+  },
+  sheetNoteCollapsed: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.xs,
+    color: colors.textSecondary,
   },
   selectedLineCard: {
     borderWidth: 2,
