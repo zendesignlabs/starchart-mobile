@@ -1,22 +1,14 @@
 import axios from 'axios';
 import type { ChartData, AstrocartographyLine, TransitAspect } from '../types/chart';
 
-const BASE_URL = process.env.EXPO_PUBLIC_EPHEMERIS_URL ?? '';
-const API_KEY = process.env.EXPO_PUBLIC_EPHEMERIS_KEY ?? '';
+const BASE_URL = `${process.env.EXPO_PUBLIC_API_URL ?? 'https://mobile.starchart.now'}/api/ephemeris`;
 
 const client = axios.create({
   baseURL: BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Api-Key': API_KEY,
-  },
+  headers: { 'Content-Type': 'application/json' },
   timeout: 15000,
 });
 
-/**
- * Calculate a natal chart for a given birth datetime and location.
- * Matches the ephemeris service POST /chart endpoint.
- */
 export async function calculateChart(
   datetime: string,
   lat: number,
@@ -26,15 +18,11 @@ export async function calculateChart(
     datetime,
     lat,
     lng,
-    houseSystem: 'P', // Placidus
+    houseSystem: 'P',
   });
   return response.data;
 }
 
-/**
- * Calculate astrocartography lines for a natal chart.
- * Matches the ephemeris service POST /astrocartography endpoint.
- */
 export async function calculateACGLines(
   datetime: string,
   lat: number,
@@ -47,17 +35,13 @@ export async function calculateACGLines(
   return response.data.lines;
 }
 
-/**
- * Get transits to a natal chart for a given moment.
- * If momentUTC is omitted, the current time is used.
- */
 export async function getTransitsToNatal(
   natalDatetime: string,
   natalLat: number,
   natalLng: number,
   momentUTC?: string
 ): Promise<TransitAspect[]> {
-  const response = await client.post<{ aspects: TransitAspect[] }>('/transits', {
+  const response = await client.post<{ aspects: TransitAspect[] }>('/transits-to-natal', {
     natalDatetime,
     natalLat,
     natalLng,

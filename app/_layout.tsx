@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Stack, useRootNavigationState, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -15,6 +15,7 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SplashScreen } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuthStore } from '../src/store/auth';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,7 +28,7 @@ const queryClient = new QueryClient({
 
 SplashScreen.preventAutoHideAsync();
 
-const STORAGE_KEY = '@starchart/profile';
+const PROFILE_KEY = '@starchart/profile';
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -39,40 +40,42 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
-  const [profileChecked, setProfileChecked] = useState(false);
-  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+  const { token, hydrated, hydrate } = useAuthStore();
   const router = useRouter();
   const navState = useRootNavigationState();
 
-  // Check AsyncStorage once on mount
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((value) => {
-      setHasProfile(value !== null);
-      setProfileChecked(true);
-    });
+    hydrate();
   }, []);
 
-  // Hide splash once fonts + profile check are both done
   useEffect(() => {
-    if ((fontsLoaded || fontError) && profileChecked) {
+    if ((fontsLoaded || fontError) && hydrated) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError, profileChecked]);
+  }, [fontsLoaded, fontError, hydrated]);
 
-  // Navigate once navigation is ready and we know the profile state
   useEffect(() => {
     if (!navState?.key) return;
-    if (!profileChecked) return;
+    if (!hydrated) return;
     if (!fontsLoaded && !fontError) return;
 
-    if (hasProfile) {
-      router.replace('/(app)/');
-    } else {
-      router.replace('/(auth)/onboarding');
+    if (!token) {
+      router.replace('/(auth)/');
+      return;
     }
-  }, [navState?.key, profileChecked, fontsLoaded, fontError, hasProfile]);
 
-  if ((!fontsLoaded && !fontError) || !profileChecked) {
+    // Authenticated — check if they've completed birth data onboarding.
+    AsyncStorage.getItem(PROFILE_KEY).then((profile) => {
+      if (!profile) {
+        router.replace('/(auth)/onboarding');
+      } else {
+        router.replace('/(app)/');
+        // (app)/_layout.tsx handles the subscription gate from here.
+      }
+    });
+  }, [navState?.key, hydrated, fontsLoaded, fontError, token]);
+
+  if ((!fontsLoaded && !fontError) || !hydrated) {
     return null;
   }
 

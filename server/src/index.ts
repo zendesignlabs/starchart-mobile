@@ -5,6 +5,7 @@ import { logger } from 'hono/logger'
 import { stripeRouter } from './routes/stripe.js'
 import { ephemerisRouter } from './routes/ephemeris.js'
 import { subscriptionRouter } from './routes/subscriptions.js'
+import { authRouter } from './routes/auth.js'
 
 const app = new Hono()
 
@@ -18,6 +19,7 @@ app.use('*', cors({
 app.get('/health', (c) => c.json({ ok: true, service: 'starchart-mobile-api' }))
 
 app.route('/api/webhooks', stripeRouter)
+app.route('/api/auth', authRouter)
 app.route('/api/subscriptions', subscriptionRouter)
 app.route('/api/ephemeris', ephemerisRouter)
 

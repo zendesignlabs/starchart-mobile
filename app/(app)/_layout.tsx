@@ -1,7 +1,46 @@
-import { Tabs } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Tabs, useRouter } from 'expo-router';
+import { AppState, AppStateStatus } from 'react-native';
 import { colors, fontFamilies, fontSizes } from '../../src/theme';
+import { useAuthStore } from '../../src/store/auth';
+import { getSubscriptionStatus } from '../../src/lib/api';
 
 export default function AppLayout() {
+  const router = useRouter();
+  const { token } = useAuthStore();
+  const [subChecked, setSubChecked] = useState(false);
+
+  async function checkSubscription() {
+    if (!token) {
+      router.replace('/(auth)/');
+      return;
+    }
+    try {
+      const status = await getSubscriptionStatus();
+      if (!status.active) {
+        router.replace('/(auth)/paywall');
+      }
+    } catch {
+      // Network failure — let the user in rather than hard-locking them out.
+      // The server will enforce access when actual data requests are made.
+    } finally {
+      setSubChecked(true);
+    }
+  }
+
+  // Check on mount and whenever the app comes back to foreground
+  // (handles the return-from-Stripe-checkout flow).
+  useEffect(() => {
+    checkSubscription();
+
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'active') checkSubscription();
+    });
+    return () => sub.remove();
+  }, [token]);
+
+  if (!subChecked) return null;
+
   return (
     <Tabs
       screenOptions={{
