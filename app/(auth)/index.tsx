@@ -88,15 +88,15 @@ export default function WelcomeScreen() {
           />
         )}
 
-        {__DEV__ && (
-          <TouchableOpacity
-            style={styles.reviewButton}
-            onPress={handleReviewMode}
-            disabled={loading}
-          >
-            <Text style={styles.reviewButtonText}>Continue in review mode</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={styles.reviewButton}
+          onPress={handleReviewMode}
+          disabled={loading}
+        >
+          <Text style={styles.reviewButtonText}>Continue in review mode</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.reviewNote}>Temporary review bypass while Apple Developer migration is pending.</Text>
 
         {Platform.OS !== 'ios' && (
           <View style={styles.emailBlock}>
@@ -176,6 +176,13 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.heading,
     fontSize: fontSizes.md,
     color: colors.textPrimary,
+  },
+  reviewNote: {
+    fontFamily: fontFamilies.body,
+    fontSize: fontSizes.xs,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
   },
   emailBlock: {
     gap: spacing.sm,
