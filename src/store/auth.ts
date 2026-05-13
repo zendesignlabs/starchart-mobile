@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import * as SecureStore from 'expo-secure-store'
 
-const TOKEN_KEY = '@starchart/auth_token'
-const EMAIL_KEY = '@starchart/auth_email'
+const TOKEN_KEY = 'starchart.auth_token'
+const EMAIL_KEY = 'starchart.auth_email'
 
 interface AuthState {
   token: string | null

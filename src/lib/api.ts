@@ -1,7 +1,7 @@
 import axios from 'axios'
 import * as SecureStore from 'expo-secure-store'
 
-const TOKEN_KEY = '@starchart/auth_token'
+const TOKEN_KEY = 'starchart.auth_token'
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://mobile.starchart.now'
 
