@@ -1,5 +1,7 @@
 import axios from 'axios';
 import type { ChartData, AstrocartographyLine, TransitAspect, Planet } from '../types/chart';
+import type { StoredProfile } from '../types/profile';
+import { getActiveLocation, normalizeChartData } from './profile';
 import { transformRawChart } from './transform';
 
 const BASE_URL = `${process.env.EXPO_PUBLIC_API_URL ?? 'https://mobile.starchart.now'}/api/ephemeris`;
@@ -83,6 +85,41 @@ export async function calculateACGLines(
 ): Promise<AstrocartographyLine[]> {
   const { acgLines } = await calculateChartBundle(datetime, lat, lng);
   return acgLines;
+}
+
+export async function getRelocatedChart(profile: StoredProfile): Promise<ChartData> {
+  const activeLocation = getActiveLocation(profile);
+  const natalChart = normalizeChartData(profile);
+
+  if (activeLocation.isBirth) {
+    if (!natalChart) {
+      return calculateChart(profile.birthDatetime, profile.birthLat, profile.birthLng);
+    }
+    return natalChart;
+  }
+
+  const relocated = await calculateChart(profile.birthDatetime, activeLocation.lat, activeLocation.lng);
+  if (!natalChart?.planets) return relocated;
+
+  const natalPlanets = new Map(natalChart.planets.map((planet) => [planet.name, planet]));
+  return {
+    ...relocated,
+    // Relocation preserves natal ecliptic positions. Houses/angles come from the active place.
+    planets: relocated.planets.map((planet) => {
+      const natal = natalPlanets.get(planet.name);
+      if (!natal) return planet;
+      return {
+        ...planet,
+        sign: natal.sign,
+        degree: natal.degree,
+        minute: natal.minute,
+        longitude: natal.longitude,
+        speed: natal.speed,
+        retrograde: natal.retrograde,
+      };
+    }),
+    aspects: natalChart.aspects,
+  };
 }
 
 export async function getTransitsToNatal(

@@ -1,10 +1,12 @@
 import { useCallback, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
 import * as ephemeris from '../../src/lib/ephemeris';
+import { LocationSwitcher } from '../../src/components/LocationSwitcher';
+import { getActiveLocation, normalizeChartData as normalizeStoredChartData, PROFILE_KEY } from '../../src/lib/profile';
 import type {
   ChartData,
   PlanetPosition,
@@ -12,10 +14,9 @@ import type {
   ZodiacSign,
   AspectType,
 } from '../../src/types/chart';
+import type { StoredProfile } from '../../src/types/profile';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const STORAGE_KEY = '@starchart/profile';
 
 const SIGN_SYMBOLS: Record<ZodiacSign, string> = {
   aries: '♈', taurus: '♉', gemini: '♊', cancer: '♋',
@@ -152,25 +153,6 @@ function AspectRow({ aspect, index }: { aspect: ChartData['aspects'][number]; in
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
-interface Profile {
-  name: string;
-  birthDatetime: string;
-  birthPlace: string;
-  birthLat: number;
-  birthLng: number;
-  birthLocalDate?: string;
-  birthLocalTime?: string;
-  timeUnknown?: boolean;
-  chartData: ChartData | { chartData: ChartData };
-  chartCalculatedFor?: string;
-  updatedAt?: string;
-}
-
-function normalizeChartData(chartData: Profile['chartData']): ChartData | null {
-  if (!chartData) return null;
-  if ('chartData' in chartData) return chartData.chartData;
-  return chartData;
-}
 
 function formatBirthTime(datetime: string, localTime?: string, timeUnknown?: boolean): string {
   if (timeUnknown) return 'time unknown';
@@ -187,52 +169,98 @@ function formatBirthTime(datetime: string, localTime?: string, timeUnknown?: boo
 
 export default function ChartScreen() {
   const insets = useSafeAreaInsets();
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<StoredProfile | null>(null);
+  const [displayChart, setDisplayChart] = useState<ChartData | null>(null);
+  const [relocating, setRelocating] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
 
       async function loadAndRefreshChart() {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        const raw = await AsyncStorage.getItem(PROFILE_KEY);
         if (!raw) {
-          if (!cancelled) setProfile(null);
+          if (!cancelled) {
+            setProfile(null);
+            setDisplayChart(null);
+          }
           return;
         }
 
-        const savedProfile: Profile = JSON.parse(raw);
-        if (!cancelled) setProfile(savedProfile);
+        const savedProfile: StoredProfile = JSON.parse(raw);
+        const activeLocation = getActiveLocation(savedProfile);
+        const cachedRelocated = activeLocation.id
+          ? savedProfile.relocatedCharts?.[activeLocation.id]
+          : null;
+        const natalChart = normalizeStoredChartData(savedProfile);
+        const cachedChart = activeLocation.isBirth ? natalChart : cachedRelocated?.chartData;
 
-        const needsRecalc =
+        if (!cancelled) {
+          setProfile(savedProfile);
+          setDisplayChart(cachedChart ?? natalChart);
+        }
+
+        const needsBirthRecalc =
+          activeLocation.isBirth &&
           savedProfile.birthDatetime &&
           typeof savedProfile.birthLat === 'number' &&
           typeof savedProfile.birthLng === 'number' &&
           savedProfile.chartCalculatedFor !== savedProfile.birthDatetime;
 
-        if (!needsRecalc) return;
+        const needsRelocationRecalc =
+          !activeLocation.isBirth &&
+          activeLocation.id &&
+          (!cachedRelocated ||
+            cachedRelocated.calculatedFor !== savedProfile.birthDatetime ||
+            cachedRelocated.lat !== activeLocation.lat ||
+            cachedRelocated.lng !== activeLocation.lng);
+
+        if (!needsBirthRecalc && !needsRelocationRecalc) return;
 
         try {
-          const chartData = await ephemeris.calculateChart(
-            savedProfile.birthDatetime,
-            savedProfile.birthLat,
-            savedProfile.birthLng
-          );
-          const refreshedProfile = {
-            ...savedProfile,
-            chartData,
-            chartCalculatedFor: savedProfile.birthDatetime,
-            updatedAt: new Date().toISOString(),
-          };
-          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(refreshedProfile));
-          if (!cancelled) setProfile(refreshedProfile);
+          if (!cancelled) setRelocating(true);
+          const chartData = needsBirthRecalc
+            ? await ephemeris.calculateChart(savedProfile.birthDatetime, savedProfile.birthLat, savedProfile.birthLng)
+            : await ephemeris.getRelocatedChart(savedProfile);
+
+          const refreshedProfile: StoredProfile = needsBirthRecalc
+            ? {
+                ...savedProfile,
+                chartData,
+                chartCalculatedFor: savedProfile.birthDatetime,
+                relocatedCharts: {},
+                updatedAt: new Date().toISOString(),
+              }
+            : {
+                ...savedProfile,
+                relocatedCharts: {
+                  ...(savedProfile.relocatedCharts ?? {}),
+                  [activeLocation.id!]: {
+                    chartData,
+                    calculatedFor: savedProfile.birthDatetime,
+                    lat: activeLocation.lat,
+                    lng: activeLocation.lng,
+                    updatedAt: new Date().toISOString(),
+                  },
+                },
+                updatedAt: new Date().toISOString(),
+              };
+          await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(refreshedProfile));
+          if (!cancelled) {
+            setProfile(refreshedProfile);
+            setDisplayChart(chartData);
+          }
         } catch {
           // Keep the saved chart visible if refresh fails; Settings can still edit/retry.
+        } finally {
+          if (!cancelled) setRelocating(false);
         }
       }
 
       loadAndRefreshChart();
       return () => { cancelled = true; };
-    }, [])
+    }, [refreshToken])
   );
 
   if (!profile) {
@@ -245,8 +273,9 @@ export default function ChartScreen() {
     );
   }
 
-  const { chartData, name, birthDatetime, birthPlace, birthLocalDate, birthLocalTime, timeUnknown } = profile;
-  const chart = normalizeChartData(chartData);
+  const { name, birthDatetime, birthPlace, birthLocalDate, birthLocalTime, timeUnknown } = profile;
+  const activeLocation = getActiveLocation(profile);
+  const chart = displayChart ?? normalizeStoredChartData(profile);
 
   if (!chart?.planets || !chart?.angles) {
     return (
@@ -287,11 +316,35 @@ export default function ChartScreen() {
     >
       {/* Header */}
       <View style={[sStyles.header, { paddingTop: insets.top + spacing.lg }]}>
-        <Text style={sStyles.heading}>Natal Chart</Text>
-        <Text style={sStyles.subheading}>
-          {name} · {birthDate}{birthTime ? ` · ${birthTime}` : ''}
-        </Text>
+        <View style={sStyles.headerTopRow}>
+          <View style={sStyles.headerTitleWrap}>
+            <Text style={sStyles.heading}>Natal Chart</Text>
+            <Text style={sStyles.subheading}>
+              {name} · {birthDate}{birthTime ? ` · ${birthTime}` : ''}
+            </Text>
+          </View>
+          <LocationSwitcher
+            profile={profile}
+            onProfileChange={(next) => {
+              setProfile(next);
+              setRefreshToken((token) => token + 1);
+            }}
+            compact
+          />
+        </View>
         <Text style={sStyles.place}>{birthPlace}</Text>
+        {!activeLocation.isBirth && (
+          <Text style={sStyles.relocatedText}>Relocated to {activeLocation.label}</Text>
+        )}
+        {timeUnknown && !activeLocation.isBirth && (
+          <Text style={sStyles.caveatText}>Time unknown: relocated houses use the noon approximation.</Text>
+        )}
+        {relocating && (
+          <View style={sStyles.loadingRow}>
+            <ActivityIndicator size="small" color={colors.textPrimary} />
+            <Text style={sStyles.loadingRowText}>Updating relocated houses…</Text>
+          </View>
+        )}
       </View>
 
       {/* Angles */}
@@ -353,6 +406,16 @@ const sStyles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: colors.borderBlack,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  headerTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
   heading: {
     fontFamily: fontFamilies.heading,
     fontSize: fontSizes['2xl'],
@@ -369,6 +432,35 @@ const sStyles = StyleSheet.create({
     fontSize: fontSizes.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  relocatedText: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.accentPink,
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.sm,
+    color: colors.textPrimary,
+  },
+  caveatText: {
+    fontFamily: fontFamilies.body,
+    fontSize: fontSizes.xs,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  loadingRowText: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.sm,
+    color: colors.textPrimary,
   },
   sectionHeader: {
     paddingHorizontal: spacing.xl,

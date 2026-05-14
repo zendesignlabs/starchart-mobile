@@ -1,24 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
+import { Alert, View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
 import * as ephemeris from '../../src/lib/ephemeris';
+import { LocationSwitcher } from '../../src/components/LocationSwitcher';
+import { getActiveLocation, newPinnedLocation, PROFILE_KEY, readProfile, writeProfile } from '../../src/lib/profile';
 import type { AstrocartographyLine, TransitAspect, Planet, LineType } from '../../src/types/chart';
+import type { StoredProfile } from '../../src/types/profile';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Profile {
-  name: string;
-  birthDatetime: string;
-  birthPlace: string;
-  birthLat: number;
-  birthLng: number;
-  chartData: import('../../src/types/chart').ChartData;
-  chartCalculatedFor?: string;
-  createdAt: string;
-}
 
 interface PlaceResult {
   display_name: string;
@@ -33,8 +25,6 @@ interface FocusPlace {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const STORAGE_KEY = '@starchart/profile';
 
 const LINE_COLORS: Record<LineType, string> = {
   AC: colors.accentPink,
@@ -95,7 +85,7 @@ export default function MapScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ planet?: string; lineType?: string }>();
   const mapRef = useRef<MapView | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<StoredProfile | null>(null);
   const [lines, setLines] = useState<AstrocartographyLine[]>([]);
   const [transits, setTransits] = useState<TransitAspect[]>([]);
   const [activatedPlanets, setActivatedPlanets] = useState<Set<Planet>>(new Set());
@@ -113,7 +103,7 @@ export default function MapScreen() {
     setLoading(true);
     setError('');
     try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      const raw = await AsyncStorage.getItem(PROFILE_KEY);
       if (!raw) {
         setProfile(null);
         setLines([]);
@@ -121,7 +111,7 @@ export default function MapScreen() {
         setActivatedPlanets(new Set());
         return;
       }
-      const p: Profile = JSON.parse(raw);
+      const p: StoredProfile = JSON.parse(raw);
       setProfile(p);
       setSelectedLine(null);
       setFocusPlanet(null);
@@ -144,7 +134,7 @@ export default function MapScreen() {
           chartCalculatedFor: p.birthDatetime,
           updatedAt: new Date().toISOString(),
         };
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(refreshedProfile));
+        await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(refreshedProfile));
         setProfile(refreshedProfile);
       }
 
@@ -217,6 +207,7 @@ export default function MapScreen() {
     return aActive - bActive;
   });
 
+  const activeLocation = profile ? getActiveLocation(profile) : null;
   const activatedList = Array.from(activatedPlanets).slice(0, 4);
   const labelLines = sortedLines.filter((line) => {
     if (selectedLine && line.planet === selectedLine.planet && line.lineType === selectedLine.lineType) return true;
@@ -260,8 +251,46 @@ export default function MapScreen() {
     }, 650);
   }
 
+  function handleProfileChange(next: StoredProfile) {
+    setProfile(next);
+    const nextActive = getActiveLocation(next);
+    mapRef.current?.animateToRegion({
+      latitude: nextActive.lat,
+      longitude: nextActive.lng,
+      latitudeDelta: 22,
+      longitudeDelta: 22,
+    }, 650);
+  }
+
+  async function savePinnedRelocation(latitude: number, longitude: number) {
+    const current = await readProfile();
+    if (!current) return;
+    const location = newPinnedLocation(latitude, longitude);
+    const next = {
+      ...current,
+      relocations: [...(current.relocations ?? []), location],
+      activeLocationId: location.id,
+    };
+    await writeProfile(next);
+    handleProfileChange(next);
+  }
+
+  function handleMapLongPress(event: any) {
+    const { latitude, longitude } = event.nativeEvent.coordinate;
+    setFocusPlace({ name: 'Pinned location', latitude, longitude });
+    mapRef.current?.animateToRegion({ latitude, longitude, latitudeDelta: 18, longitudeDelta: 18 }, 500);
+    Alert.alert(
+      'Save relocation?',
+      'Use this pinned place as your active relocated chart location?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Save', onPress: () => savePinnedRelocation(latitude, longitude) },
+      ]
+    );
+  }
+
   async function restartOnboarding() {
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    await AsyncStorage.removeItem(PROFILE_KEY);
     router.replace('/(auth)/onboarding');
   }
 
@@ -293,18 +322,23 @@ export default function MapScreen() {
     <View style={styles.root}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerTitleWrap}>
           <Text style={styles.screenEyebrow}>MAP</Text>
           <Text style={styles.appName}>Your Map Now</Text>
         </View>
-        <View style={styles.dateBadge}>
-          <Text style={styles.dateLabel}>Today</Text>
-          <Text style={styles.dateText}>{formatDate(new Date())}</Text>
-        </View>
+        {profile && <LocationSwitcher profile={profile} onProfileChange={handleProfileChange} compact />}
       </View>
 
+      {activeLocation && !activeLocation.isBirth && (
+        <View style={styles.relocationBanner}>
+          <Text style={styles.relocationBannerText}>
+            Natal astrocartography stays fixed. Chart houses are relocated to {activeLocation.label}.
+          </Text>
+        </View>
+      )}
+
       {/* Place search */}
-      <View style={styles.searchBox}>
+      <View style={[styles.searchBox, activeLocation && !activeLocation.isBirth && styles.searchBoxRelocated]}>
         <TextInput
           style={styles.searchInput}
           value={placeQuery}
@@ -326,7 +360,7 @@ export default function MapScreen() {
         </TouchableOpacity>
       </View>
       {placeResults.length > 0 && (
-        <View style={styles.searchResults}>
+        <View style={[styles.searchResults, activeLocation && !activeLocation.isBirth && styles.searchResultsRelocated]}>
           {placeResults.map((place, i) => (
             <TouchableOpacity
               key={`${place.lat}-${place.lon}-${i}`}
@@ -345,12 +379,13 @@ export default function MapScreen() {
         ref={mapRef}
         style={styles.map}
         initialRegion={{
-          latitude: profile?.birthLat ?? 20,
-          longitude: profile?.birthLng ?? 0,
-          latitudeDelta: 100,
-          longitudeDelta: 150,
+          latitude: activeLocation?.lat ?? 20,
+          longitude: activeLocation?.lng ?? 0,
+          latitudeDelta: activeLocation ? 45 : 100,
+          longitudeDelta: activeLocation ? 45 : 150,
         }}
         mapType="standard"
+        onLongPress={handleMapLongPress}
       >
         {sortedLines
           .filter((l) => l.visible !== false && Array.isArray(l.coordinates) && l.coordinates.length > 0)
@@ -382,6 +417,13 @@ export default function MapScreen() {
               />
             );
           })}
+        {activeLocation && !activeLocation.isBirth && (
+          <Marker coordinate={{ latitude: activeLocation.lat, longitude: activeLocation.lng }}>
+            <View style={styles.activeLocationMarker}>
+              <Text style={styles.activeLocationMarkerText}>⌖</Text>
+            </View>
+          </Marker>
+        )}
         {focusPlace && (
           <Marker coordinate={{ latitude: focusPlace.latitude, longitude: focusPlace.longitude }}>
             <View style={styles.placeMarker}>
@@ -528,6 +570,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.backgroundPrimary,
     zIndex: 10,
   },
+  headerTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: spacing.sm,
+  },
   screenEyebrow: {
     fontFamily: fontFamilies.bodyMedium,
     fontSize: fontSizes.xs,
@@ -540,24 +587,23 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.xl,
     color: colors.textPrimary,
   },
-  dateBadge: {
-    borderWidth: 1,
+  relocationBanner: {
+    position: 'absolute',
+    top: 108,
+    left: spacing.base,
+    right: spacing.base,
+    zIndex: 22,
+    borderWidth: 2,
     borderColor: colors.borderBlack,
-    backgroundColor: colors.backgroundSecondary,
+    backgroundColor: colors.accentPink,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-    alignItems: 'flex-end',
   },
-  dateLabel: {
+  relocationBannerText: {
     fontFamily: fontFamilies.bodyMedium,
     fontSize: fontSizes.xs,
     color: colors.textPrimary,
-    textTransform: 'uppercase',
-  },
-  dateText: {
-    fontFamily: fontFamilies.bodyMedium,
-    fontSize: fontSizes.xs,
-    color: colors.textSecondary,
+    lineHeight: 16,
   },
   map: {
     flex: 1,
@@ -572,6 +618,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.borderBlack,
     backgroundColor: colors.backgroundPrimary,
+  },
+  searchBoxRelocated: {
+    top: 172,
   },
   searchInput: {
     flex: 1,
@@ -606,6 +655,9 @@ const styles = StyleSheet.create({
     borderColor: colors.borderBlack,
     backgroundColor: colors.backgroundPrimary,
   },
+  searchResultsRelocated: {
+    top: 218,
+  },
   searchResultRow: {
     padding: spacing.sm,
   },
@@ -616,6 +668,20 @@ const styles = StyleSheet.create({
   searchResultText: {
     fontFamily: fontFamilies.bodyMedium,
     fontSize: fontSizes.xs,
+    color: colors.textPrimary,
+  },
+  activeLocationMarker: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.borderBlack,
+    backgroundColor: colors.accentPink,
+  },
+  activeLocationMarkerText: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.lg,
     color: colors.textPrimary,
   },
   placeMarker: {

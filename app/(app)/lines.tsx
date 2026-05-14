@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
+import { LocationSwitcher } from '../../src/components/LocationSwitcher';
+import { readProfile } from '../../src/lib/profile';
+import type { StoredProfile } from '../../src/types/profile';
 import {
   interpretations,
   PLANETS_ORDER,
@@ -14,7 +17,7 @@ import {
 
 function firstSentence(text: string): string {
   const match = text.match(/^[^.!?]+[.!?]/);
-  return match ? match[0] : text.slice(0, 100) + '…';
+  return match ? match[0] : text.slice(0, 100) + '...';
 }
 
 function capitalize(s: string) {
@@ -101,7 +104,7 @@ function InterpRow({
           <Text style={styles.rowTitle}>
             {isAngle ? interp.title : `${planet} ${angle}`}
           </Text>
-          <Text style={styles.rowChevron}>{isExpanded ? '−' : '+'}</Text>
+          <Text style={styles.rowChevron}>{isExpanded ? '-' : '+'}</Text>
         </View>
 
         {!isExpanded && (
@@ -135,6 +138,13 @@ export default function LinesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [profile, setProfile] = useState<StoredProfile | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      readProfile().then(setProfile);
+    }, [])
+  );
 
   function handleToggle(key: string) {
     setExpandedKey((prev) => (prev === key ? null : key));
@@ -152,9 +162,14 @@ export default function LinesScreen() {
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: 56 + insets.top }]}>
-        <Text style={styles.heading}>YOUR LINES</Text>
-        <Text style={styles.subheading}>Interpretations by planet and angle</Text>
+      <View style={[styles.header, { paddingTop: 56 + insets.top }]}> 
+        <View style={styles.headerTopRow}>
+          <View style={styles.headerTitleWrap}>
+            <Text style={styles.heading}>YOUR LINES</Text>
+            <Text style={styles.subheading}>Interpretations by planet and angle</Text>
+          </View>
+          {profile && <LocationSwitcher profile={profile} onProfileChange={setProfile} compact />}
+        </View>
       </View>
 
       {/* List */}
@@ -194,6 +209,16 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.base,
     borderBottomWidth: 2,
     borderBottomColor: colors.borderBlack,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  headerTitleWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   heading: {
     fontFamily: fontFamilies.heading,
@@ -288,5 +313,5 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.heading,
     fontSize: fontSizes.sm,
     color: colors.textPrimary,
-  }, 
+  },
 });

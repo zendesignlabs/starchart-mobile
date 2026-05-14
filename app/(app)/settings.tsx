@@ -12,21 +12,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontFamilies, fontSizes, spacing } from '../../src/theme';
+import { getActiveLocation, PROFILE_KEY, writeProfile } from '../../src/lib/profile';
+import type { SavedLocation, StoredProfile } from '../../src/types/profile';
 import { useAuthStore } from '../../src/store/auth';
 import { getSubscriptionStatus, createCheckoutSession, type SubscriptionStatus } from '../../src/lib/api';
 
-const PROFILE_KEY = '@starchart/profile';
 const STRIPE_PORTAL_URL = 'https://billing.stripe.com/p/login/test_00000000'; // swap for live portal link
-
-interface Profile {
-  name: string;
-  birthDatetime: string;
-  birthPlace: string;
-  timeUnknown?: boolean;
-  birthLocalDate?: string;
-  birthLocalTime?: string;
-  birthTimezone?: string;
-}
 
 function formatTrialEnd(trialEnd: number | null | undefined): string {
   if (!trialEnd) return '';
@@ -119,7 +110,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { email, clearAuth } = useAuthStore();
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<StoredProfile | null>(null);
   const [subStatus, setSubStatus] = useState<SubscriptionStatus | null>(null);
   const [subLoading, setSubLoading] = useState(true);
 
@@ -176,6 +167,57 @@ export default function SettingsScreen() {
     );
   }
 
+  async function setActiveLocation(id?: string) {
+    if (!profile) return;
+    const next = { ...profile, activeLocationId: id };
+    await writeProfile(next);
+    setProfile(next);
+  }
+
+  function handleRenameLocation(location: SavedLocation) {
+    Alert.prompt(
+      'Rename location',
+      'Choose a short label for this relocation.',
+      async (name) => {
+        const trimmed = name.trim();
+        if (!profile || !trimmed) return;
+        const next = {
+          ...profile,
+          relocations: (profile.relocations ?? []).map((item) =>
+            item.id === location.id ? { ...item, name: trimmed } : item
+          ),
+        };
+        await writeProfile(next);
+        setProfile(next);
+      },
+      'plain-text',
+      location.name
+    );
+  }
+
+  function handleDeleteLocation(location: SavedLocation) {
+    Alert.alert('Delete relocation?', `Remove ${location.name}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          if (!profile) return;
+          const next = {
+            ...profile,
+            relocations: (profile.relocations ?? []).filter((item) => item.id !== location.id),
+            activeLocationId: profile.activeLocationId === location.id ? undefined : profile.activeLocationId,
+            relocatedCharts: Object.fromEntries(
+              Object.entries(profile.relocatedCharts ?? {}).filter(([id]) => id !== location.id)
+            ),
+          };
+          await writeProfile(next);
+          setProfile(next);
+        },
+      },
+    ]);
+  }
+
   async function handleSignOut() {
     Alert.alert('Sign out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
@@ -192,6 +234,7 @@ export default function SettingsScreen() {
 
   const birthDate = profile ? formatBirthDate(profile.birthDatetime, profile.birthLocalDate) : '';
   const birthTime = profile ? formatBirthTime(profile.birthDatetime, profile.timeUnknown, profile.birthLocalTime) : '';
+  const activeLocation = profile ? getActiveLocation(profile) : null;
 
   function subStatusLabel(): string {
     if (subLoading) return 'Checking…';
@@ -240,6 +283,46 @@ export default function SettingsScreen() {
         </>
       )}
       <SettingsRow label="Edit birth data" onPress={handleEditBirthData} accent />
+
+      {/* Saved locations */}
+      <SectionHeader label="Saved locations" />
+      {profile && (
+        <>
+          <SettingsRow
+            label={activeLocation?.isBirth ? '✓ Birth location' : 'Birth location'}
+            value={profile.birthPlace}
+            onPress={() => setActiveLocation(undefined)}
+          />
+          {(profile.relocations ?? []).map((location) => (
+            <View key={location.id} style={sStyles.locationBlock}>
+              <TouchableOpacity
+                style={sStyles.locationMainRow}
+                onPress={() => setActiveLocation(location.id)}
+                activeOpacity={0.85}
+              >
+                <View style={sStyles.locationTextWrap}>
+                  <Text style={sStyles.locationName}>
+                    {activeLocation?.id === location.id ? '✓ ' : ''}{location.name}
+                  </Text>
+                  <Text style={sStyles.locationPlace} numberOfLines={2}>{location.place}</Text>
+                </View>
+                <Text style={sStyles.locationTimezone}>{location.timezone}</Text>
+              </TouchableOpacity>
+              <View style={sStyles.locationActions}>
+                <TouchableOpacity style={sStyles.locationActionButton} onPress={() => handleRenameLocation(location)}>
+                  <Text style={sStyles.locationActionText}>Rename</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={sStyles.locationActionButton} onPress={() => handleDeleteLocation(location)}>
+                  <Text style={[sStyles.locationActionText, { color: '#CC2200' }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+          {(profile.relocations ?? []).length === 0 && (
+            <Text style={sStyles.emptyLocations}>Add relocations from the location chip on Map, Chart, or Lines.</Text>
+          )}
+        </>
+      )}
 
       {/* Account actions */}
       <SectionHeader label="" />
@@ -321,5 +404,65 @@ const sStyles = StyleSheet.create({
     fontSize: fontSizes.lg,
     color: colors.textPrimary,
     marginLeft: spacing.md,
+  },
+  locationBlock: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderBlack,
+    backgroundColor: colors.backgroundPrimary,
+  },
+  locationMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  locationTextWrap: {
+    flex: 1,
+    paddingRight: spacing.sm,
+  },
+  locationName: {
+    fontFamily: fontFamilies.heading,
+    fontSize: fontSizes.base,
+    color: colors.textPrimary,
+  },
+  locationPlace: {
+    fontFamily: fontFamilies.body,
+    fontSize: fontSizes.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  locationTimezone: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.xs,
+    color: colors.textSecondary,
+    maxWidth: 92,
+    textAlign: 'right',
+  },
+  locationActions: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: colors.backgroundSecondary,
+    paddingLeft: spacing.xl,
+  },
+  locationActionButton: {
+    paddingVertical: spacing.sm,
+    paddingRight: spacing.lg,
+  },
+  locationActionText: {
+    fontFamily: fontFamilies.bodyMedium,
+    fontSize: fontSizes.sm,
+    color: colors.textPrimary,
+    textDecorationLine: 'underline',
+  },
+  emptyLocations: {
+    fontFamily: fontFamilies.body,
+    fontSize: fontSizes.sm,
+    color: colors.textSecondary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.backgroundSecondary,
   },
 });
